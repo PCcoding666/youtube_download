@@ -10,7 +10,7 @@ env:
   NODE_VERSION: '20'
   PYTHON_VERSION: '3.11'
   REGISTRY: registry.cn-hangzhou.aliyuncs.com
-  NAMESPACE: your-namespace
+  NAMESPACE: youtube-download
   IMAGE_BACKEND: youtube-download-backend
   IMAGE_FRONTEND: youtube-download-frontend
 
