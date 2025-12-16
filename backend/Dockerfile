@@ -8,7 +8,8 @@ ENV HTTP_PROXY=""
 ENV HTTPS_PROXY=""
 
 # Install system dependencies
-RUN apt-get update && \
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg curl && \
     rm -rf /var/lib/apt/lists/*
 
