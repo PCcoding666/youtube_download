@@ -9,6 +9,10 @@ on:
 env:
   NODE_VERSION: '20'
   PYTHON_VERSION: '3.11'
+  REGISTRY: registry.cn-hangzhou.aliyuncs.com
+  NAMESPACE: your-namespace
+  IMAGE_BACKEND: youtube-download-backend
+  IMAGE_FRONTEND: youtube-download-frontend
 
 jobs:
   # ============================================
@@ -95,11 +99,11 @@ jobs:
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
 
   # ============================================
-  # Deploy Frontend to Vercel
+  # Build and Push Docker Images to Aliyun
   # ============================================
-  deploy-frontend:
-    name: Deploy Frontend
-    needs: [frontend-ci]
+  build-and-push:
+    name: Build and Push Images
+    needs: [frontend-ci, backend-ci]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
@@ -107,21 +111,62 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Aliyun Container Registry
+        uses: docker/login-action@v3
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./
-          vercel-args: '--prod'
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+
+      - name: Extract metadata for backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_BACKEND }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Extract metadata for frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_FRONTEND }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VITE_API_URL=${{ vars.VITE_API_URL }}
 
   # ============================================
-  # Deploy Backend to Railway
+  # Deploy to Server with Zero Downtime
   # ============================================
-  deploy-backend:
-    name: Deploy Backend
-    needs: [backend-ci]
+  deploy:
+    name: Deploy to Server
+    needs: [build-and-push]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
@@ -129,10 +174,114 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to Railway
-        uses: bervProject/railway-deploy@main
-        with:
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
-          service: backend
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.0
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          REGISTRY: ${{ env.REGISTRY }}
+          NAMESPACE: ${{ env.NAMESPACE }}
+          IMAGE_BACKEND: ${{ env.IMAGE_BACKEND }}
+          IMAGE_FRONTEND: ${{ env.IMAGE_FRONTEND }}
+          ALIYUN_REGISTRY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          ALIYUN_REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          envs: REGISTRY,NAMESPACE,IMAGE_BACKEND,IMAGE_FRONTEND,ALIYUN_REGISTRY_USERNAME,ALIYUN_REGISTRY_PASSWORD
+          script: |
+            set -e
+            
+            # Navigate to project directory
+            cd /opt/youtube_download || exit 1
+            
+            # Login to Aliyun Registry
+            echo "$ALIYUN_REGISTRY_PASSWORD" | docker login $REGISTRY -u "$ALIYUN_REGISTRY_USERNAME" --password-stdin
+            
+            # Pull latest images
+            echo "Pulling latest images..."
+            docker pull $REGISTRY/$NAMESPACE/$IMAGE_BACKEND:latest
+            docker pull $REGISTRY/$NAMESPACE/$IMAGE_FRONTEND:latest
+            
+            # Update docker-compose.yml with new images
+            export BACKEND_IMAGE=$REGISTRY/$NAMESPACE/$IMAGE_BACKEND:latest
+            export FRONTEND_IMAGE=$REGISTRY/$NAMESPACE/$IMAGE_FRONTEND:latest
+            
+            # Rolling update with zero downtime
+            echo "Performing rolling update..."
+            docker-compose up -d --no-deps --build backend
+            
+            # Wait for backend health check
+            echo "Waiting for backend to be healthy..."
+            for i in {1..30}; do
+              if docker exec yt-transcriber-backend curl -f http://localhost:8000/api/v1/health > /dev/null 2>&1; then
+                echo "Backend is healthy!"
+                break
+              fi
+              if [ $i -eq 30 ]; then
+                echo "Backend health check failed!"
+                docker-compose logs backend --tail=50
+                exit 1
+              fi
+              echo "Waiting for backend... ($i/30)"
+              sleep 2
+            done
+            
+            # Update frontend
+            docker-compose up -d --no-deps --build frontend
+            
+            # Wait for frontend
+            sleep 5
+            
+            # Clean up old images
+            echo "Cleaning up old images..."
+            docker image prune -f
+            
+            echo "Deployment successful!"
+
+      - name: Health check after deployment
+        run: |
+          echo "Performing final health check..."
+          for i in {1..10}; do
+            if curl -f ${{ secrets.SERVER_URL }}/api/v1/health > /dev/null 2>&1; then
+              echo "✅ Health check passed!"
+              exit 0
+            fi
+            echo "Waiting for service... ($i/10)"
+            sleep 3
+          done
+          echo "❌ Health check failed!"
+          exit 1
+
+      - name: Send success notification
+        if: success()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ✅ Deployment Successful!
+            
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Message: ${{ github.event.head_commit.message }}
+            
+            🚀 Service is now running at ${{ secrets.SERVER_URL }}
+
+      - name: Send failure notification
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ❌ Deployment Failed!
+            
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            
+            Please check GitHub Actions logs for details.

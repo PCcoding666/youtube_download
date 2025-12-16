@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-registry.cn-hangzhou.aliyuncs.com/your-namespace/youtube-download-backend:latest}
+    container_name: yt-transcriber-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - QWEN_API_KEY=${QWEN_API_KEY}
+      - TRANSCRIPT_SERVICE_API_KEY=${TRANSCRIPT_SERVICE_API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
+      - ALIYUN_ACCESS_KEY_ID=${ALIYUN_ACCESS_KEY_ID}
+      - ALIYUN_ACCESS_KEY_SECRET=${ALIYUN_ACCESS_KEY_SECRET}
+      - ALIYUN_OSS_ENDPOINT=${ALIYUN_OSS_ENDPOINT}
+      - ALIYUN_OSS_BUCKET=${ALIYUN_OSS_BUCKET}
+      - SECRET_KEY=${SECRET_KEY}
+      - STORAGE_DIR=/app/storage
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TEMP_DIR=/tmp/video_processing
+      - https_proxy=http://host.docker.internal:33210
+      - http_proxy=http://host.docker.internal:33210
+      - all_proxy=socks5://host.docker.internal:33211
+      - CLASH_API_URL=http://host.docker.internal:33212
+      - CLASH_API_SECRET=${CLASH_API_SECRET}
+      - YOUTUBE_PREFERRED_NODES=${YOUTUBE_PREFERRED_NODES:-美国,日本原生,新加坡,IEPL}
+      - AGENTGO_API_KEY=${AGENTGO_API_KEY}
+      - MAX_VIDEO_DURATION=${MAX_VIDEO_DURATION:-600}
+      - TRANSCRIPTION_TIMEOUT=${TRANSCRIPTION_TIMEOUT:-300}
+      - POLL_INTERVAL=${POLL_INTERVAL:-5}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - app-storage:/app/storage
+      - /tmp/video_processing:/tmp/video_processing
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-registry.cn-hangzhou.aliyuncs.com/your-namespace/youtube-download-frontend:latest}
+    container_name: yt-transcriber-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  app-storage:
+    driver: local
+
+networks:
+  app-network:
+    name: yt-transcriber-network
+    driver: bridge
