@@ -107,13 +107,13 @@ graph TB
         Registry[Aliyun Container Registry<br/>Image Storage]
         OSS[Aliyun OSS<br/>File Storage]
         Qwen[Qwen API<br/>AI Service]
-        Proxy[Sakuracat Proxy<br/>YouTube Access]
+        AgentGo[AgentGo<br/>Browser Automation]
     end
     
     User --> Nginx
     Backend --> OSS
     Backend --> Qwen
-    Backend --> Proxy
+    Backend --> AgentGo
     
     Registry -.Pull Images.-> Nginx
     Registry -.Pull Images.-> Backend

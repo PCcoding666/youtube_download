@@ -356,9 +356,8 @@ docker pull registry.cn-hangzhou.aliyuncs.com/your-namespace/youtube-download-ba
 - `ALIYUN_OSS_BUCKET`: OSS bucket name
 
 ### Optional
-- `CLASH_API_SECRET`: If using Clash proxy
 - `TELEGRAM_BOT_TOKEN`: For notifications
-- `AGENTGO_API_KEY`: Browser automation
+- `AGENTGO_API_KEY`: Browser automation for YouTube access
 
 ## 🎓 Additional Resources
 

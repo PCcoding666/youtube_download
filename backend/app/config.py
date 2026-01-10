@@ -1,8 +1,7 @@
-"""
-Application configuration management.
+"""Application configuration management.
 Load settings from environment variables.
 """
-from typing import Optional
+from typing import Optional, List
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -19,20 +18,31 @@ class Settings(BaseSettings):
     oss_bucket: str = ""
     oss_endpoint: str = "oss-cn-beijing.aliyuncs.com"
     
-    # YouTube Proxy (optional)
+    # YouTube Proxy (optional, for direct yt-dlp usage)
     # Support multiple proxies separated by comma for rotation
-    # e.g., "http://127.0.0.1:33210,http://127.0.0.1:33211,socks5://127.0.0.1:33212"
+    # e.g., "http://127.0.0.1:33210,socks5://127.0.0.1:33211"
     youtube_proxy: Optional[str] = None
     
-    # Clash API for node switching (optional)
-    clash_api_url: str = "http://127.0.0.1:9090"
-    clash_api_secret: str = ""
+    # AgentGo API for browser automation (primary solution for YouTube access)
+    # Get API key from https://docs.agentgo.live/
+    agentgo_api_key: str = ""
+    agentgo_api_url: str = "https://api.browsers.live"
+    agentgo_region: str = "us"  # Default region: us, uk, de, fr, jp, sg, in, au, ca
     
-    # Preferred nodes for YouTube download (node name keywords)
-    youtube_preferred_nodes: str = "美国,日本原生,新加坡"
+    # YouTube credentials for AgentGo login
+    youtube_email: str = ""
+    youtube_password: str = ""
+    
+    # GeoIP Configuration
+    # Path to MaxMind GeoLite2-Country.mmdb database file
+    # Download from: https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+    geoip_db_path: Optional[str] = None
+    
+    # Enable intelligent region routing based on user IP
+    enable_geo_routing: bool = True
     
     @property
-    def youtube_proxy_list(self) -> list:
+    def youtube_proxy_list(self) -> List[str]:
         """Get list of proxies for rotation."""
         if not self.youtube_proxy:
             return []
@@ -48,7 +58,7 @@ class Settings(BaseSettings):
     poll_interval: int = 5  # seconds
     
     # CORS Configuration
-    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    cors_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000"
     
     class Config:
         env_file = ".env"

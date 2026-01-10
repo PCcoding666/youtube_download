@@ -13,9 +13,10 @@ services:
       - OSS_BUCKET=${OSS_BUCKET}
       - OSS_ENDPOINT=${OSS_ENDPOINT}
       - YOUTUBE_PROXY=http://host.docker.internal:33210
-      - CLASH_API_URL=http://host.docker.internal:33212
-      - CLASH_API_SECRET=
-      - YOUTUBE_PREFERRED_NODES=${YOUTUBE_PREFERRED_NODES:-美国,日本原生,新加坡,IEPL}
+      - AGENTGO_API_KEY=${AGENTGO_API_KEY}
+      - AGENTGO_API_URL=${AGENTGO_API_URL:-https://api.datasea.network}
+      - YOUTUBE_EMAIL=${YOUTUBE_EMAIL}
+      - YOUTUBE_PASSWORD=${YOUTUBE_PASSWORD}
       - TEMP_DIR=/tmp/video_processing
       - LOG_LEVEL=INFO
       - CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:80

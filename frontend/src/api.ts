@@ -59,6 +59,64 @@ export interface SystemInfo {
   proxy_configured: boolean;
 }
 
+// New interfaces for direct URL extraction
+export interface VideoFormatInfo {
+  format_id: string;
+  url: string;
+  ext: string;
+  resolution: string | null;
+  height: number | null;
+  width: number | null;
+  fps: number | null;  // Can be float
+  vcodec: string | null;
+  acodec: string | null;
+  filesize: number | null;
+  tbr: number | null;
+  format_note: string | null;
+  is_video: boolean;
+  is_audio: boolean;
+  is_video_only: boolean;
+  is_audio_only: boolean;
+  has_both: boolean;
+}
+
+export interface DownloadURLs {
+  video_url: string | null;
+  audio_url: string | null;
+  video_format: VideoFormatInfo | null;
+  audio_format: VideoFormatInfo | null;
+  needs_merge: boolean;
+  resolution: string;
+}
+
+export interface ExtractedVideoInfo {
+  video_id: string;
+  title: string;
+  duration: number;
+  thumbnail: string | null;
+  description: string | null;
+  uploader: string | null;
+  uploader_id: string | null;
+  view_count: number | null;
+  like_count: number | null;
+  upload_date: string | null;
+  format_count: number;
+}
+
+export interface ExtractURLRequest {
+  youtube_url: string;
+  resolution: VideoResolution;
+}
+
+export interface ExtractURLResponse {
+  success: boolean;
+  video_info: ExtractedVideoInfo | null;
+  download_urls: DownloadURLs | null;
+  all_formats: VideoFormatInfo[] | null;
+  error_message: string | null;
+  extraction_time: number | null;
+}
+
 export const processVideo = async (request: ProcessRequest): Promise<ProcessResponse> => {
   const response = await api.post<ProcessResponse>('/api/v1/process', request);
   return response.data;
@@ -90,6 +148,12 @@ export const healthCheck = async (): Promise<boolean> => {
   } catch {
     return false;
   }
+};
+
+// New function for direct URL extraction
+export const extractDirectURLs = async (request: ExtractURLRequest): Promise<ExtractURLResponse> => {
+  const response = await api.post<ExtractURLResponse>('/api/v1/extract', request);
+  return response.data;
 };
 
 export default api;

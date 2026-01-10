@@ -7,8 +7,8 @@ python-multipart>=0.0.6
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 
-# YouTube Download
-yt-dlp>=2024.10.7
+# YouTube Download (always use latest for YouTube compatibility)
+yt-dlp
 
 # AI Transcription (Aliyun Paraformer)
 dashscope>=1.14.0
@@ -19,9 +19,22 @@ oss2>=2.18.0
 # HTTP Client
 requests>=2.31.0
 httpx>=0.26.0
+aiohttp>=3.9.0
 
 # Environment Variables
 python-dotenv>=1.0.0
 
 # Utilities
 aiofiles>=23.2.1
+
+# GeoIP for intelligent region routing
+geoip2>=4.8.0
+
+# Browser automation for AgentGo
+websockets>=12.0
+playwright>=1.51.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+hypothesis>=6.0.0

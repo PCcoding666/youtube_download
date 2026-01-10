@@ -87,10 +87,6 @@ ALIYUN_OSS_BUCKET=your-bucket-name
 # Security
 SECRET_KEY=your_secret_key_here
 
-# Proxy (if using sakuracat)
-CLASH_API_SECRET=your_clash_api_secret_here
-YOUTUBE_PREFERRED_NODES=美国,日本原生,新加坡,IEPL
-
 # Browser Runtime
 AGENTGO_API_KEY=your_agentgo_api_key_here
 

@@ -6,17 +6,56 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+import re
 from pathlib import Path
 
 from app.config import settings
 from app.api.routes import router
 from app.utils.ffmpeg_tools import check_ffmpeg_installed, get_ffmpeg_version
 
-# Configure logging
+# Configure comprehensive logging with security considerations
+class SecureFormatter(logging.Formatter):
+    """Custom formatter that sanitizes sensitive data from log messages."""
+    
+    SENSITIVE_PATTERNS = [
+        (r'[A-Za-z0-9+/=]{20,}', '[REDACTED_TOKEN]'),  # Tokens
+        (r'password[=:]\s*\S+', 'password=[REDACTED]'),  # Passwords
+        (r'api[_-]?key[=:]\s*\S+', 'api_key=[REDACTED]'),  # API keys
+        (r'secret[=:]\s*\S+', 'secret=[REDACTED]'),  # Secrets
+        (r'pot=[^&\s]+', 'pot=[REDACTED]'),  # PO tokens in URLs
+    ]
+    
+    def format(self, record):
+        # Get the original formatted message
+        msg = super().format(record)
+        
+        # Sanitize sensitive data
+        for pattern, replacement in self.SENSITIVE_PATTERNS:
+            msg = re.sub(pattern, replacement, msg, flags=re.IGNORECASE)
+        
+        return msg
+
+# Configure logging with enhanced security and monitoring
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper()),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+    ]
 )
+
+# Apply secure formatter to all handlers
+secure_formatter = SecureFormatter(
+    "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+)
+
+for handler in logging.root.handlers:
+    handler.setFormatter(secure_formatter)
+
+# Set specific log levels for token extraction monitoring
+logging.getLogger("app.services.agentgo_service").setLevel(logging.INFO)
+logging.getLogger("app.services.downloader").setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 

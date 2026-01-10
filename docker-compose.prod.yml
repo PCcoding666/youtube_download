@@ -21,9 +21,6 @@ services:
       - https_proxy=http://host.docker.internal:33210
       - http_proxy=http://host.docker.internal:33210
       - all_proxy=socks5://host.docker.internal:33211
-      - CLASH_API_URL=http://host.docker.internal:33212
-      - CLASH_API_SECRET=${CLASH_API_SECRET}
-      - YOUTUBE_PREFERRED_NODES=${YOUTUBE_PREFERRED_NODES:-美国,日本原生,新加坡,IEPL}
       - AGENTGO_API_KEY=${AGENTGO_API_KEY}
       - MAX_VIDEO_DURATION=${MAX_VIDEO_DURATION:-600}
       - TRANSCRIPTION_TIMEOUT=${TRANSCRIPTION_TIMEOUT:-300}
