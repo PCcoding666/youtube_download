@@ -9,8 +9,7 @@ on:
 env:
   NODE_VERSION: '20'
   PYTHON_VERSION: '3.11'
-  REGISTRY: registry.cn-hangzhou.aliyuncs.com
-  NAMESPACE: youtube-download
+  REGISTRY: ghcr.io
   IMAGE_BACKEND: youtube-download-backend
   IMAGE_FRONTEND: youtube-download-frontend
 
@@ -99,13 +98,16 @@ jobs:
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
 
   # ============================================
-  # Build and Push Docker Images to Aliyun
+  # Build and Push Docker Images to GitHub Container Registry
   # ============================================
   build-and-push:
     name: Build and Push Images
     needs: [frontend-ci, backend-ci]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout code
@@ -114,18 +116,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Aliyun Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
-          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata for backend
         id: meta-backend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_BACKEND }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_BACKEND }}
           tags: |
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
@@ -134,7 +136,7 @@ jobs:
         id: meta-frontend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_FRONTEND }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_FRONTEND }}
           tags: |
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
@@ -178,34 +180,34 @@ jobs:
         uses: appleboy/ssh-action@v1.0.0
         env:
           REGISTRY: ${{ env.REGISTRY }}
-          NAMESPACE: ${{ env.NAMESPACE }}
+          REPO_OWNER: ${{ github.repository_owner }}
           IMAGE_BACKEND: ${{ env.IMAGE_BACKEND }}
           IMAGE_FRONTEND: ${{ env.IMAGE_FRONTEND }}
-          ALIYUN_REGISTRY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
-          ALIYUN_REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+          GHCR_TOKEN: ${{ secrets.GHCR_PAT }}
+          GHCR_USER: ${{ secrets.GHCR_USER }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
-          envs: REGISTRY,NAMESPACE,IMAGE_BACKEND,IMAGE_FRONTEND,ALIYUN_REGISTRY_USERNAME,ALIYUN_REGISTRY_PASSWORD
+          envs: REGISTRY,REPO_OWNER,IMAGE_BACKEND,IMAGE_FRONTEND,GHCR_TOKEN,GHCR_USER
           script: |
             set -e
             
             # Navigate to project directory
             cd /opt/youtube_download || exit 1
             
-            # Login to Aliyun Registry
-            echo "$ALIYUN_REGISTRY_PASSWORD" | docker login $REGISTRY -u "$ALIYUN_REGISTRY_USERNAME" --password-stdin
+            # Login to GitHub Container Registry
+            echo "$GHCR_TOKEN" | docker login $REGISTRY -u "$GHCR_USER" --password-stdin
             
             # Pull latest images
             echo "Pulling latest images..."
-            docker pull $REGISTRY/$NAMESPACE/$IMAGE_BACKEND:latest
-            docker pull $REGISTRY/$NAMESPACE/$IMAGE_FRONTEND:latest
+            docker pull $REGISTRY/$REPO_OWNER/$IMAGE_BACKEND:latest
+            docker pull $REGISTRY/$REPO_OWNER/$IMAGE_FRONTEND:latest
             
             # Update docker-compose.yml with new images
-            export BACKEND_IMAGE=$REGISTRY/$NAMESPACE/$IMAGE_BACKEND:latest
-            export FRONTEND_IMAGE=$REGISTRY/$NAMESPACE/$IMAGE_FRONTEND:latest
+            export BACKEND_IMAGE=$REGISTRY/$REPO_OWNER/$IMAGE_BACKEND:latest
+            export FRONTEND_IMAGE=$REGISTRY/$REPO_OWNER/$IMAGE_FRONTEND:latest
             
             # Rolling update with zero downtime
             echo "Performing rolling update..."
