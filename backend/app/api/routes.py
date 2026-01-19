@@ -1137,3 +1137,76 @@ async def extract_via_agentgo(request_data: ExtractURLRequest, request: Request)
             "extraction_time": time.time() - start_time,
             "method": "agentgo_direct"
         }
+
+
+# ============================================================================
+# Proxy Download Endpoint
+# ============================================================================
+
+@router.get("/proxy-download")
+async def proxy_download(url: str, filename: str = "video.mp4"):
+    """
+    Proxy download for Google Video URLs.
+    
+    This endpoint streams the video from Google servers and sets proper
+    Content-Disposition headers to force browser download instead of playback.
+    
+    Args:
+        url: The direct Google Video URL
+        filename: Desired filename for download
+    """
+    import httpx
+    from fastapi.responses import StreamingResponse
+    
+    # Validate that it's a googlevideo.com URL for security
+    if 'googlevideo.com' not in url:
+        raise HTTPException(
+            status_code=400,
+            detail="Only googlevideo.com URLs are allowed"
+        )
+    
+    try:
+        # Stream the video from Google servers
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream('GET', url) as response:
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"Failed to fetch video: {response.status_code}"
+                    )
+                
+                # Get content type and length from original response
+                content_type = response.headers.get('content-type', 'video/mp4')
+                content_length = response.headers.get('content-length')
+                
+                # Create headers that force download
+                headers = {
+                    'Content-Disposition': f'attachment; filename="{filename}"',
+                    'Content-Type': content_type,
+                }
+                
+                if content_length:
+                    headers['Content-Length'] = content_length
+                
+                # Stream the response
+                async def stream_generator():
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        yield chunk
+                
+                return StreamingResponse(
+                    stream_generator(),
+                    headers=headers,
+                    media_type=content_type
+                )
+                
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="Download timed out"
+        )
+    except Exception as e:
+        logger.error(f"Proxy download failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Download failed: {str(e)}"
+        )

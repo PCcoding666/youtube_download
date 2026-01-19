@@ -5,6 +5,7 @@ Handles file uploads and generates public URLs.
 import oss2
 import asyncio
 import logging
+import os
 from typing import Optional
 from pathlib import Path
 import mimetypes
@@ -46,14 +47,29 @@ class OSSStorage:
         self.bucket_name = bucket_name or settings.oss_bucket
         self.endpoint = endpoint or settings.oss_endpoint
         
-        # Initialize auth and bucket
+        # Initialize auth
         self.auth = oss2.Auth(self.access_key_id, self.access_key_secret)
+        
+        # Initialize bucket (we'll control proxy via environment variables)
         self.bucket = oss2.Bucket(self.auth, self.endpoint, self.bucket_name)
     
     def _get_content_type(self, file_path: str) -> str:
         """Determine content type from file extension."""
         content_type, _ = mimetypes.guess_type(file_path)
         return content_type or 'application/octet-stream'
+    
+    def _disable_proxy_env(self) -> dict:
+        """Temporarily disable proxy environment variables for OSS access."""
+        saved = {}
+        for key in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
+            if key in os.environ:
+                saved[key] = os.environ.pop(key)
+        return saved
+    
+    def _restore_proxy_env(self, saved: dict):
+        """Restore proxy environment variables."""
+        for key, value in saved.items():
+            os.environ[key] = value
     
     async def upload_file(
         self,
@@ -84,10 +100,15 @@ class OSSStorage:
         loop = asyncio.get_event_loop()
         
         def do_upload():
-            headers = {'Content-Type': content_type}
-            with open(local_path, 'rb') as f:
-                result = self.bucket.put_object(object_key, f, headers=headers)
-            return result
+            # Temporarily disable proxy for OSS access
+            saved_proxy = self._disable_proxy_env()
+            try:
+                headers = {'Content-Type': content_type}
+                with open(local_path, 'rb') as f:
+                    result = self.bucket.put_object(object_key, f, headers=headers)
+                return result
+            finally:
+                self._restore_proxy_env(saved_proxy)
         
         try:
             logger.info(f"Uploading {local_path} to OSS: {object_key}")
@@ -150,14 +171,9 @@ class OSSStorage:
             object_key: OSS object key
             
         Returns:
-            Public URL
+            Public URL (bucket must have public read permission)
         """
-        # Remove 'oss-' prefix if present in endpoint for URL
-        endpoint = self.endpoint
-        if endpoint.startswith('oss-'):
-            endpoint = endpoint
-        
-        return f"https://{self.bucket_name}.{endpoint}/{object_key}"
+        return f"https://{self.bucket_name}.{self.endpoint}/{object_key}"
     
     async def delete_file(self, object_key: str) -> bool:
         """

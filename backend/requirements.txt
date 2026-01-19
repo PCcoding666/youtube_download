@@ -10,6 +10,10 @@ pydantic-settings>=2.1.0
 # YouTube Download (always use latest for YouTube compatibility)
 yt-dlp
 
+# bgutil PO Token provider plugin for yt-dlp
+# Auto-generates PO Tokens to bypass YouTube bot detection
+bgutil-ytdlp-pot-provider
+
 # AI Transcription (Aliyun Paraformer)
 dashscope>=1.14.0
 

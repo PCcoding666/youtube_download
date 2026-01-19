@@ -10,7 +10,6 @@ import {
   Link,
   Volume2,
   Copy,
-  ExternalLink,
 } from 'lucide-react';
 import {
   extractDirectURLs,
@@ -92,6 +91,18 @@ function App() {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleDownload = (url: string, filename: string) => {
+    // Direct download - open in new tab
+    // The browser will handle the download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const formatFileSize = (bytes: number | null): string => {
@@ -239,7 +250,19 @@ function App() {
             </div>
 
             <div className="download-links">
-              <h4>Download Links</h4>
+              <h4>Recommended Downloads</h4>
+              <div className="download-notice" style={{
+                padding: '10px',
+                marginBottom: '15px',
+                backgroundColor: '#fff3cd',
+                borderLeft: '3px solid #ffc107',
+                borderRadius: '4px',
+                fontSize: '14px',
+                color: '#856404'
+              }}>
+                ⚠️ <strong>Note:</strong> Direct download links are IP-restricted by YouTube. 
+                If you get a 403 error, the link can only be accessed from the server that extracted it.
+              </div>
               
               {result.download_urls.video_url && (
                 <div className="link-item">
@@ -249,15 +272,20 @@ function App() {
                     {renderFormatInfo(result.download_urls.video_format, 'Format')}
                   </div>
                   <div className="link-actions">
-                    <a
-                      href={result.download_urls.video_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => {
+                        if (result.download_urls?.video_url && result.video_info?.title) {
+                          handleDownload(
+                            result.download_urls.video_url,
+                            `${result.video_info.title}.${result.download_urls.video_format?.ext || 'mp4'}`
+                          );
+                        }
+                      }}
                       className="download-btn video-btn"
                     >
-                      <ExternalLink size={16} />
-                      Open Link
-                    </a>
+                      <Download size={16} />
+                      Download
+                    </button>
                     <button
                       onClick={() => copyToClipboard(result.download_urls!.video_url!, 'video')}
                       className="copy-btn"
@@ -277,15 +305,20 @@ function App() {
                     {renderFormatInfo(result.download_urls.audio_format, 'Format')}
                   </div>
                   <div className="link-actions">
-                    <a
-                      href={result.download_urls.audio_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      onClick={() => {
+                        if (result.download_urls?.audio_url && result.video_info?.title) {
+                          handleDownload(
+                            result.download_urls.audio_url,
+                            `${result.video_info.title}.${result.download_urls.audio_format?.ext || 'webm'}`
+                          );
+                        }
+                      }}
                       className="download-btn audio-btn"
                     >
-                      <ExternalLink size={16} />
-                      Open Link
-                    </a>
+                      <Download size={16} />
+                      Download
+                    </button>
                     <button
                       onClick={() => copyToClipboard(result.download_urls!.audio_url!, 'audio')}
                       className="copy-btn"
@@ -304,6 +337,180 @@ function App() {
                 </div>
               )}
             </div>
+
+            {/* All Available Formats Section */}
+            {result.all_formats && result.all_formats.length > 0 && (
+              <div className="all-formats-section" style={{ marginTop: '30px' }}>
+                <h4 style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Link size={20} />
+                  All Available Formats ({result.all_formats.length})
+                </h4>
+                
+                {/* Video Formats */}
+                <div className="format-group" style={{ marginBottom: '20px' }}>
+                  <h5 style={{ 
+                    color: '#4CAF50', 
+                    marginBottom: '10px',
+                    fontSize: '14px',
+                    fontWeight: '600'
+                  }}>
+                    🎬 Video Formats
+                  </h5>
+                  <div className="formats-table" style={{
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: '8px',
+                    overflow: 'hidden'
+                  }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#e9ecef' }}>
+                          <th style={{ padding: '10px', textAlign: 'left' }}>Quality</th>
+                          <th style={{ padding: '10px', textAlign: 'left' }}>Format</th>
+                          <th style={{ padding: '10px', textAlign: 'left' }}>Codec</th>
+                          <th style={{ padding: '10px', textAlign: 'left' }}>Size</th>
+                          <th style={{ padding: '10px', textAlign: 'center' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.all_formats
+                          .filter(f => f.is_video && f.url)
+                          .sort((a, b) => (b.height || 0) - (a.height || 0))
+                          .map((format, idx) => (
+                            <tr key={`video-${idx}`} style={{ 
+                              borderBottom: '1px solid #dee2e6',
+                              backgroundColor: format.has_both ? '#e8f5e9' : 'transparent'
+                            }}>
+                              <td style={{ padding: '10px' }}>
+                                <strong>{format.height ? `${format.height}p` : format.resolution || 'N/A'}</strong>
+                                {format.fps && <span style={{ color: '#666', marginLeft: '4px' }}>@{Math.round(format.fps)}fps</span>}
+                                {format.has_both && <span style={{ 
+                                  marginLeft: '8px', 
+                                  backgroundColor: '#4CAF50', 
+                                  color: 'white', 
+                                  padding: '2px 6px', 
+                                  borderRadius: '4px',
+                                  fontSize: '11px'
+                                }}>+Audio</span>}
+                              </td>
+                              <td style={{ padding: '10px' }}>
+                                <span style={{ 
+                                  backgroundColor: format.ext === 'mp4' ? '#2196F3' : '#9C27B0',
+                                  color: 'white',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '12px'
+                                }}>
+                                  {format.ext?.toUpperCase() || 'N/A'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px', color: '#666', fontSize: '12px' }}>
+                                {format.vcodec && format.vcodec !== 'none' ? format.vcodec.split('.')[0] : '-'}
+                              </td>
+                              <td style={{ padding: '10px', color: '#666' }}>
+                                {formatFileSize(format.filesize)}
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'center' }}>
+                                <button
+                                  onClick={() => copyToClipboard(format.url, `format-${format.format_id}`)}
+                                  style={{
+                                    padding: '4px 12px',
+                                    fontSize: '12px',
+                                    backgroundColor: copiedUrl === `format-${format.format_id}` ? '#4CAF50' : '#6c757d',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {copiedUrl === `format-${format.format_id}` ? '✓ Copied' : 'Copy URL'}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Audio Formats */}
+                <div className="format-group">
+                  <h5 style={{ 
+                    color: '#FF9800', 
+                    marginBottom: '10px',
+                    fontSize: '14px',
+                    fontWeight: '600'
+                  }}>
+                    🎵 Audio Formats
+                  </h5>
+                  <div className="formats-table" style={{
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: '8px',
+                    overflow: 'hidden'
+                  }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#e9ecef' }}>
+                          <th style={{ padding: '10px', textAlign: 'left' }}>Quality</th>
+                          <th style={{ padding: '10px', textAlign: 'left' }}>Format</th>
+                          <th style={{ padding: '10px', textAlign: 'left' }}>Codec</th>
+                          <th style={{ padding: '10px', textAlign: 'left' }}>Bitrate</th>
+                          <th style={{ padding: '10px', textAlign: 'left' }}>Size</th>
+                          <th style={{ padding: '10px', textAlign: 'center' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.all_formats
+                          .filter(f => f.is_audio_only && f.url)
+                          .sort((a, b) => (b.tbr || 0) - (a.tbr || 0))
+                          .map((format, idx) => (
+                            <tr key={`audio-${idx}`} style={{ borderBottom: '1px solid #dee2e6' }}>
+                              <td style={{ padding: '10px' }}>
+                                <strong>{format.format_note || 'Audio'}</strong>
+                              </td>
+                              <td style={{ padding: '10px' }}>
+                                <span style={{ 
+                                  backgroundColor: format.ext === 'm4a' ? '#FF9800' : '#607D8B',
+                                  color: 'white',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '12px'
+                                }}>
+                                  {format.ext?.toUpperCase() || 'N/A'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px', color: '#666', fontSize: '12px' }}>
+                                {format.acodec && format.acodec !== 'none' ? format.acodec.split('.')[0] : '-'}
+                              </td>
+                              <td style={{ padding: '10px', color: '#666' }}>
+                                {format.tbr ? `${Math.round(format.tbr)} kbps` : '-'}
+                              </td>
+                              <td style={{ padding: '10px', color: '#666' }}>
+                                {formatFileSize(format.filesize)}
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'center' }}>
+                                <button
+                                  onClick={() => copyToClipboard(format.url, `format-${format.format_id}`)}
+                                  style={{
+                                    padding: '4px 12px',
+                                    fontSize: '12px',
+                                    backgroundColor: copiedUrl === `format-${format.format_id}` ? '#4CAF50' : '#6c757d',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  {copiedUrl === `format-${format.format_id}` ? '✓ Copied' : 'Copy URL'}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {result.extraction_time && (
               <p className="extraction-time">

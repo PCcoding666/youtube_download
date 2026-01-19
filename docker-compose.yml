@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+  # bgutil PO Token provider - generates PO Tokens for yt-dlp
+  bgutil:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-pot-provider
+    ports:
+      - "4416:4416"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4416/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   backend:
     build: ./backend
     container_name: yt-transcriber-backend
@@ -12,7 +25,7 @@ services:
       - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET}
       - OSS_BUCKET=${OSS_BUCKET}
       - OSS_ENDPOINT=${OSS_ENDPOINT}
-      - YOUTUBE_PROXY=http://host.docker.internal:33210
+      # AgentGo provides Cookies + Visitor Data
       - AGENTGO_API_KEY=${AGENTGO_API_KEY}
       - AGENTGO_API_URL=${AGENTGO_API_URL:-https://api.datasea.network}
       - YOUTUBE_EMAIL=${YOUTUBE_EMAIL}
@@ -20,8 +33,9 @@ services:
       - TEMP_DIR=/tmp/video_processing
       - LOG_LEVEL=INFO
       - CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:80
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      bgutil:
+        condition: service_healthy
     volumes:
       - /tmp/video_processing:/tmp/video_processing
     restart: unless-stopped

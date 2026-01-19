@@ -150,7 +150,7 @@ export const healthCheck = async (): Promise<boolean> => {
   }
 };
 
-// New function for direct URL extraction
+// New function for direct URL extraction via yt-dlp + AgentGo auth
 export const extractDirectURLs = async (request: ExtractURLRequest): Promise<ExtractURLResponse> => {
   const response = await api.post<ExtractURLResponse>('/api/v1/extract', request);
   return response.data;

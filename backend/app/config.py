@@ -18,32 +18,32 @@ class Settings(BaseSettings):
     oss_bucket: str = ""
     oss_endpoint: str = "oss-cn-beijing.aliyuncs.com"
     
-    # YouTube Proxy (optional, for direct yt-dlp usage)
-    # Support multiple proxies separated by comma for rotation
-    # e.g., "http://127.0.0.1:33210,socks5://127.0.0.1:33211"
+    # YouTube Proxy - DEPRECATED (kept for backward compatibility)
+    # PO Token is now handled by bgutil-ytdlp-pot-provider plugin
+    # Cookies/Visitor Data come from AgentGo
     youtube_proxy: Optional[str] = None
     
-    # AgentGo API for browser automation (primary solution for YouTube access)
-    # Get API key from https://docs.agentgo.live/
+    # AgentGo API for browser automation
+    # Provides: Cookies + Visitor Data
+    # PO Token: Handled by bgutil-ytdlp-pot-provider plugin (Docker sidecar)
     agentgo_api_key: str = ""
     agentgo_api_url: str = "https://api.browsers.live"
-    agentgo_region: str = "us"  # Default region: us, uk, de, fr, jp, sg, in, au, ca
+    agentgo_region: str = "us"  # Regions: us, uk, de, fr, jp, sg, in, au, ca
     
     # YouTube credentials for AgentGo login
     youtube_email: str = ""
     youtube_password: str = ""
     
-    # GeoIP Configuration
-    # Path to MaxMind GeoLite2-Country.mmdb database file
-    # Download from: https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
-    geoip_db_path: Optional[str] = None
+    # HTTP Proxy for YouTube access (used by yt-dlp)
+    http_proxy: Optional[str] = None
     
-    # Enable intelligent region routing based on user IP
+    # GeoIP Configuration
+    geoip_db_path: Optional[str] = None
     enable_geo_routing: bool = True
     
     @property
     def youtube_proxy_list(self) -> List[str]:
-        """Get list of proxies for rotation."""
+        """DEPRECATED - kept for backward compatibility."""
         if not self.youtube_proxy:
             return []
         return [p.strip() for p in self.youtube_proxy.split(',') if p.strip()]

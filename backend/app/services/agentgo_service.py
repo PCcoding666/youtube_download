@@ -2232,10 +2232,18 @@ class AgentGoService:
                             }
                             captured_urls['combined'].append(url_info)
                             self.logger.info(f"Found combined format: {fmt.get('qualityLabel')} (itag={fmt.get('itag')})")
+                        elif fmt.get('signatureCipher'):
+                            self.logger.debug(f"Combined format {fmt.get('qualityLabel')} (itag={fmt.get('itag')}) requires signature decryption")
+                    
+                    # Track stats for adaptive formats
+                    adaptive_with_url = 0
+                    adaptive_with_cipher = 0
                     
                     for fmt in streams.get('adaptiveFormats', []):
+                        mime = fmt.get('mimeType', '')
+                        
                         if fmt.get('url'):
-                            mime = fmt.get('mimeType', '')
+                            adaptive_with_url += 1
                             url_info = {
                                 'url': fmt['url'],
                                 'itag': str(fmt.get('itag', '')),
@@ -2252,6 +2260,31 @@ class AgentGoService:
                             elif 'audio' in mime:
                                 captured_urls['audio'].append(url_info)
                                 self.logger.info(f"Found audio format: {fmt.get('audioQuality')} (itag={fmt.get('itag')})")
+                        elif fmt.get('signatureCipher'):
+                            adaptive_with_cipher += 1
+                            # Log what we're missing due to signature cipher
+                            if 'video' in mime:
+                                self.logger.debug(
+                                    f"Video format {fmt.get('qualityLabel')} (itag={fmt.get('itag')}) "
+                                    f"requires signature decryption - skipping"
+                                )
+                            elif 'audio' in mime:
+                                self.logger.debug(
+                                    f"Audio format {fmt.get('audioQuality')} (itag={fmt.get('itag')}) "
+                                    f"requires signature decryption - skipping"
+                                )
+                    
+                    self.logger.info(
+                        f"Adaptive formats: {adaptive_with_url} with direct URL, "
+                        f"{adaptive_with_cipher} require signature decryption"
+                    )
+                    
+                    # If most formats require signature decryption, log a warning
+                    if adaptive_with_cipher > adaptive_with_url and adaptive_with_url < 5:
+                        self.logger.warning(
+                            f"Most adaptive formats ({adaptive_with_cipher}/{adaptive_with_url + adaptive_with_cipher}) "
+                            f"require signature decryption. Consider using yt-dlp for better format support."
+                        )
                                 
                 except Exception as e:
                     self.logger.warning(f"Failed to extract from JavaScript: {e}")
@@ -2343,6 +2376,9 @@ class AgentGoService:
         """
         Select best video and audio URLs from captured streams.
         
+        For high resolutions (720p+), prefer adaptive streams (video + audio separate).
+        For low resolutions (360p/480p), can use combined streams if available.
+        
         Args:
             captured_urls: Dict with 'video', 'audio', 'combined' lists
             resolution: Preferred resolution
@@ -2355,49 +2391,123 @@ class AgentGoService:
             'audio_url': None,
             'video_format': None,
             'audio_format': None,
-            'needs_merge': False
+            'needs_merge': False,
+            'all_formats': {
+                'video': captured_urls.get('video', []),
+                'audio': captured_urls.get('audio', []),
+                'combined': captured_urls.get('combined', [])
+            }
         }
         
         # Quality mapping for itags
         itag_quality = {
-            # Combined (video+audio)
+            # Combined (video+audio) - limited to 360p/720p
             '18': 360, '22': 720,
-            # Video only
-            '134': 360, '135': 480, '136': 720, '137': 1080,
-            '298': 720, '299': 1080, '303': 1080, '308': 1440, '315': 2160,
+            # Video only (adaptive) - supports all resolutions
+            '160': 144, '133': 240, '134': 360, '135': 480, 
+            '136': 720, '137': 1080, '264': 1440, '266': 2160,
+            '298': 720, '299': 1080, '302': 720, '303': 1080, 
+            '308': 1440, '315': 2160, '330': 144, '331': 240,
+            '332': 360, '333': 480, '334': 720, '335': 1080,
+            '336': 1440, '337': 2160,
             # Audio only
-            '139': 48, '140': 128, '141': 256, '171': 128, '172': 256, '249': 50, '250': 70, '251': 160
+            '139': 48, '140': 128, '141': 256, 
+            '171': 128, '172': 256, 
+            '249': 50, '250': 70, '251': 160
         }
         
         target_height = int(resolution) if resolution.isdigit() else 1080
         
-        # Prefer combined streams if available (simpler, no merge needed)
-        if captured_urls['combined']:
-            best_combined = max(
-                captured_urls['combined'],
-                key=lambda x: itag_quality.get(x['itag'], 0)
-            )
-            result['video_url'] = best_combined['url']
-            result['video_format'] = best_combined
-            return result
+        # For high resolution (720p+), prefer adaptive streams
+        # For low resolution (360p/480p), can use combined if no adaptive available
+        prefer_adaptive = target_height >= 720
         
-        # Select best video stream
-        if captured_urls['video']:
-            # Filter by resolution
-            suitable = [
-                v for v in captured_urls['video']
-                if itag_quality.get(v['itag'], 0) <= target_height
-            ]
-            if not suitable:
-                suitable = captured_urls['video']
+        # Try adaptive streams first for high resolution
+        if prefer_adaptive and captured_urls['video']:
+            # Filter video streams by resolution
+            suitable_video = []
+            for v in captured_urls['video']:
+                height = v.get('height') or itag_quality.get(v['itag'], 0)
+                if height and height <= target_height:
+                    suitable_video.append((v, height))
             
+            if not suitable_video:
+                # No suitable resolution, get closest
+                for v in captured_urls['video']:
+                    height = v.get('height') or itag_quality.get(v['itag'], 0)
+                    if height:
+                        suitable_video.append((v, height))
+            
+            if suitable_video:
+                # Select highest quality within target
+                best_video = max(suitable_video, key=lambda x: x[1])[0]
+                result['video_url'] = best_video['url']
+                result['video_format'] = best_video
+                result['needs_merge'] = True
+                
+                self.logger.info(
+                    f"Selected adaptive video: {best_video.get('quality') or best_video.get('height')}p "
+                    f"(itag={best_video.get('itag')})"
+                )
+                
+                # Select best audio stream
+                if captured_urls['audio']:
+                    best_audio = max(
+                        captured_urls['audio'],
+                        key=lambda x: itag_quality.get(x['itag'], 0)
+                    )
+                    result['audio_url'] = best_audio['url']
+                    result['audio_format'] = best_audio
+                    
+                    self.logger.info(
+                        f"Selected audio: {best_audio.get('audioQuality', 'unknown')} "
+                        f"(itag={best_audio.get('itag')})"
+                    )
+                
+                return result
+        
+        # Fallback to combined streams for low resolution or if no adaptive available
+        if captured_urls['combined']:
+            # Filter by target resolution
+            suitable_combined = []
+            for c in captured_urls['combined']:
+                height = c.get('height') or itag_quality.get(c['itag'], 0)
+                if height and height <= target_height:
+                    suitable_combined.append((c, height))
+            
+            if not suitable_combined:
+                suitable_combined = [(c, itag_quality.get(c['itag'], 0)) for c in captured_urls['combined']]
+            
+            if suitable_combined:
+                best_combined = max(suitable_combined, key=lambda x: x[1])[0]
+                result['video_url'] = best_combined['url']
+                result['video_format'] = best_combined
+                
+                self.logger.info(
+                    f"Selected combined stream: {best_combined.get('quality') or best_combined.get('height')}p "
+                    f"(itag={best_combined.get('itag')})"
+                )
+                return result
+        
+        # Last resort: any video stream
+        if captured_urls['video']:
             best_video = max(
-                suitable,
-                key=lambda x: itag_quality.get(x['itag'], 0)
+                captured_urls['video'],
+                key=lambda x: x.get('height') or itag_quality.get(x['itag'], 0)
             )
             result['video_url'] = best_video['url']
             result['video_format'] = best_video
             result['needs_merge'] = True
+            
+            if captured_urls['audio']:
+                best_audio = max(
+                    captured_urls['audio'],
+                    key=lambda x: itag_quality.get(x['itag'], 0)
+                )
+                result['audio_url'] = best_audio['url']
+                result['audio_format'] = best_audio
+        
+        return result
         
         # Select best audio stream
         if captured_urls['audio']:
