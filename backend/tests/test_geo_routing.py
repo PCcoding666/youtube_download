@@ -44,15 +44,15 @@ class TestGeoService:
         service = GeoIPService()
         
         # Private IPs should be detected
-        assert service._is_private_ip('192.168.1.1') == True
-        assert service._is_private_ip('10.0.0.1') == True
-        assert service._is_private_ip('172.16.0.1') == True
-        assert service._is_private_ip('127.0.0.1') == True
+        assert service._is_private_ip('192.168.1.1')
+        assert service._is_private_ip('10.0.0.1')
+        assert service._is_private_ip('172.16.0.1')
+        assert service._is_private_ip('127.0.0.1')
         
         # Public IPs should not be detected as private
-        assert service._is_private_ip('8.8.8.8') == False
-        assert service._is_private_ip('1.1.1.1') == False
-        assert service._is_private_ip('208.67.222.222') == False  # OpenDNS public IP
+        assert not service._is_private_ip('8.8.8.8')
+        assert not service._is_private_ip('1.1.1.1')
+        assert not service._is_private_ip('208.67.222.222')  # OpenDNS public IP
     
     def test_supported_regions(self):
         """Test that all supported regions are properly defined."""
@@ -84,7 +84,7 @@ class TestGeoService:
             mock_session.return_value = mock_session_instance
             
             # Test should use online fallback
-            result = await service._lookup_online('8.8.8.8')
+            await service._lookup_online('8.8.8.8')
             # Note: This may return None in test environment without network
 
 
@@ -258,7 +258,7 @@ class TestGeoRoutingConfiguration:
         from app.config import settings
         
         enabled = getattr(settings, 'enable_geo_routing', True)
-        assert enabled == True
+        assert enabled
 
 
 if __name__ == '__main__':

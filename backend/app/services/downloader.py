@@ -510,7 +510,7 @@ class YouTubeDownloader:
         For direct URLs, uses standard download.
         """
         try:
-            from app.services.url_extractor import YouTubeURLExtractor, ExtractedVideo
+            from app.services.url_extractor import YouTubeURLExtractor
             from app.services.stream_converter import convert_stream_to_mp4
             
             # Extract video info and URLs

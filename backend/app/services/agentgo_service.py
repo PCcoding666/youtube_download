@@ -26,14 +26,13 @@ import hashlib
 
 try:
     import websockets
-    from websockets.exceptions import ConnectionClosed, InvalidStatusCode
     HAS_WEBSOCKETS = True
 except ImportError:
     HAS_WEBSOCKETS = False
     websockets = None
 
 try:
-    from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+    from playwright.async_api import async_playwright
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
@@ -847,48 +846,6 @@ class TokenExtractor:
         except Exception as e:
             self.logger.warning(f"Failed to get browser IP info: {e}")
             return None
-    
-    def validate_po_token(self, token: str) -> bool:
-        """
-        Validate PO token format with detailed logging.
-        
-        Args:
-            token: PO token string to validate
-            
-        Returns:
-            True if token is valid, False otherwise
-        """
-        if not token or not isinstance(token, str):
-            if self._debug_enabled:
-                self.logger.debug(f"PO token validation failed: invalid type or empty (type: {type(token)})")
-            return False
-        
-        # Remove web+ prefix if present for validation
-        token_value = token.replace('web+', '') if token.startswith('web+') else token
-        
-        # Check if token is non-empty after stripping
-        if len(token_value.strip()) == 0:
-            if self._debug_enabled:
-                self.logger.debug("PO token validation failed: empty after stripping")
-            return False
-        
-        # Basic format validation - PO tokens are typically base64-like strings
-        if not re.match(r'^[A-Za-z0-9+/=_-]+$', token_value):
-            if self._debug_enabled:
-                self.logger.debug(f"PO token validation failed: invalid characters (length: {len(token_value)})")
-            return False
-        
-        # Additional length check - PO tokens are usually substantial
-        if len(token_value) < 10:
-            if self._debug_enabled:
-                self.logger.debug(f"PO token validation failed: too short (length: {len(token_value)})")
-            return False
-        
-        if self._debug_enabled:
-            token_hash = self._create_token_hash(token)
-            self.logger.debug(f"PO token validation passed (hash: {token_hash}, length: {len(token_value)})")
-        
-        return True
     
     def validate_visitor_data(self, data: str) -> bool:
         """

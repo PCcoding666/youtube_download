@@ -65,7 +65,7 @@ async def test_agentgo_api_directly():
             try:
                 import websockets
                 print("   尝试WebSocket连接...")
-                async with websockets.connect(full_ws_url, open_timeout=15, close_timeout=5) as websocket:
+                async with websockets.connect(full_ws_url, open_timeout=15, close_timeout=5) as _:
                     print("   ✅ WebSocket连接成功")
                     return True
             except Exception as e:

@@ -91,7 +91,7 @@ async def test_agentgo_youtube_access():
                 try:
                     await page.screenshot(path="/tmp/youtube_error.png")
                     print("   已保存错误截图到 /tmp/youtube_error.png")
-                except:
+                except Exception:
                     pass
             
             print("\n3. 测试访问 YouTube 视频页面...")

@@ -140,7 +140,7 @@ def validate_cookie_file(cookie_path: str) -> Tuple[bool, Dict[str, Any]]:
         has_header = any('Netscape' in line or 'HTTP Cookie File' in line for line in lines[:3])
         
         # Count valid cookie lines
-        cookie_lines = [l for l in lines if l and not l.startswith('#')]
+        cookie_lines = [line for line in lines if line and not line.startswith('#')]
         valid_cookies = 0
         youtube_cookies = 0
         google_cookies = 0

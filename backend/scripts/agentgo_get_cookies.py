@@ -42,7 +42,7 @@ from typing import Optional, List, Dict, Any
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
-    from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+    from playwright.async_api import async_playwright, Page
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
