@@ -29,7 +29,7 @@ Usage:
     # Activate conda environment first
     source $(conda info --base)/etc/profile.d/conda.sh
     conda activate youtube_download
-    
+
     # Run tests
     cd backend
     pytest tests/test_ytdlp_with_agentgo.py -v -s
@@ -47,8 +47,7 @@ from dataclasses import dataclass, field
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -57,42 +56,49 @@ logger = logging.getLogger(__name__)
 # Test Configuration
 # ============================================================================
 
+
 @dataclass
 class TestConfig:
     """Test configuration."""
+
     # Cookie file paths (try multiple locations)
-    cookie_paths: List[str] = field(default_factory=lambda: [
-        "/tmp/youtube_cookies.txt",
-        "~/.youtube_cookies.txt",
-        "./cookies.txt",
-    ])
-    
+    cookie_paths: List[str] = field(
+        default_factory=lambda: [
+            "/tmp/youtube_cookies.txt",
+            "~/.youtube_cookies.txt",
+            "./cookies.txt",
+        ]
+    )
+
     # Test YouTube videos (short, always available)
-    test_videos: List[Dict[str, str]] = field(default_factory=lambda: [
-        {
-            "id": "jNQXAC9IVRw",  # "Me at the zoo" - First YouTube video
-            "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
-            "title": "Me at the zoo",
-        },
-        {
-            "id": "dQw4w9WgXcQ",  # Rick Astley - Never Gonna Give You Up
-            "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            "title": "Rick Astley - Never Gonna Give You Up",
-        },
-        {
-            "id": "9bZkp7q19f0",  # PSY - GANGNAM STYLE
-            "url": "https://www.youtube.com/watch?v=9bZkp7q19f0",
-            "title": "PSY - GANGNAM STYLE",
-        },
-    ])
-    
+    test_videos: List[Dict[str, str]] = field(
+        default_factory=lambda: [
+            {
+                "id": "jNQXAC9IVRw",  # "Me at the zoo" - First YouTube video
+                "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+                "title": "Me at the zoo",
+            },
+            {
+                "id": "dQw4w9WgXcQ",  # Rick Astley - Never Gonna Give You Up
+                "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                "title": "Rick Astley - Never Gonna Give You Up",
+            },
+            {
+                "id": "9bZkp7q19f0",  # PSY - GANGNAM STYLE
+                "url": "https://www.youtube.com/watch?v=9bZkp7q19f0",
+                "title": "PSY - GANGNAM STYLE",
+            },
+        ]
+    )
+
     # Local proxy (if available)
     local_proxy: Optional[str] = None
 
 
-@dataclass 
+@dataclass
 class ExtractionResult:
     """Result of video URL extraction."""
+
     success: bool
     video_id: str
     title: Optional[str] = None
@@ -110,6 +116,7 @@ class ExtractionResult:
 # Cookie Utilities
 # ============================================================================
 
+
 def find_cookie_file(paths: List[str]) -> Optional[str]:
     """Find first existing cookie file from list of paths."""
     for path in paths:
@@ -123,48 +130,57 @@ def find_cookie_file(paths: List[str]) -> Optional[str]:
 def validate_cookie_file(cookie_path: str) -> Tuple[bool, Dict[str, Any]]:
     """
     Validate cookie file format and content.
-    
+
     Returns:
         Tuple of (is_valid, details_dict)
     """
     if not os.path.exists(cookie_path):
         return False, {"error": "File does not exist"}
-    
+
     try:
-        with open(cookie_path, 'r') as f:
+        with open(cookie_path, "r") as f:
             content = f.read()
-        
-        lines = content.strip().split('\n')
-        
+
+        lines = content.strip().split("\n")
+
         # Check Netscape format header
-        has_header = any('Netscape' in line or 'HTTP Cookie File' in line for line in lines[:3])
-        
+        has_header = any(
+            "Netscape" in line or "HTTP Cookie File" in line for line in lines[:3]
+        )
+
         # Count valid cookie lines
-        cookie_lines = [line for line in lines if line and not line.startswith('#')]
+        cookie_lines = [line for line in lines if line and not line.startswith("#")]
         valid_cookies = 0
         youtube_cookies = 0
         google_cookies = 0
         important_cookies = []
-        
+
         for line in cookie_lines:
-            parts = line.split('\t')
+            parts = line.split("\t")
             if len(parts) >= 7:
                 valid_cookies += 1
                 domain = parts[0].lower()
                 name = parts[5]
-                
-                if 'youtube' in domain:
+
+                if "youtube" in domain:
                     youtube_cookies += 1
-                    if name in ['SID', 'SSID', 'HSID', 'APISID', 'SAPISID', 'LOGIN_INFO']:
+                    if name in [
+                        "SID",
+                        "SSID",
+                        "HSID",
+                        "APISID",
+                        "SAPISID",
+                        "LOGIN_INFO",
+                    ]:
                         important_cookies.append(name)
-                elif 'google' in domain:
+                elif "google" in domain:
                     google_cookies += 1
-                    if name in ['SID', 'SSID', 'HSID', 'APISID', 'SAPISID']:
+                    if name in ["SID", "SSID", "HSID", "APISID", "SAPISID"]:
                         important_cookies.append(name)
-        
+
         # Determine if cookies are valid for authentication
         has_auth_cookies = len(set(important_cookies)) >= 3
-        
+
         return True, {
             "has_header": has_header,
             "total_cookies": valid_cookies,
@@ -174,7 +190,7 @@ def validate_cookie_file(cookie_path: str) -> Tuple[bool, Dict[str, Any]]:
             "has_auth_cookies": has_auth_cookies,
             "file_size": os.path.getsize(cookie_path),
         }
-        
+
     except Exception as e:
         return False, {"error": str(e)}
 
@@ -183,171 +199,163 @@ def validate_cookie_file(cookie_path: str) -> Tuple[bool, Dict[str, Any]]:
 # yt-dlp Extraction
 # ============================================================================
 
+
 class YouTubeExtractor:
     """Extract YouTube video URLs using yt-dlp."""
-    
+
     USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/131.0.0.0 Safari/537.36"
     )
-    
-    def __init__(
-        self, 
-        cookie_file: Optional[str] = None,
-        proxy: Optional[str] = None
-    ):
+
+    def __init__(self, cookie_file: Optional[str] = None, proxy: Optional[str] = None):
         self.cookie_file = cookie_file
         self.proxy = proxy
-    
+
     def _build_opts(self, strategy: int = 1) -> Dict[str, Any]:
         """Build yt-dlp options."""
         opts = {
-            'noplaylist': True,
-            'skip_download': True,  # Only extract info, don't download
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
-            
+            "noplaylist": True,
+            "skip_download": True,  # Only extract info, don't download
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": False,
+            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
             # Anti-bot headers
-            'http_headers': {
-                'User-Agent': self.USER_AGENT,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
+            "http_headers": {
+                "User-Agent": self.USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
             },
-            
             # Bypass settings
-            'geo_bypass': True,
-            'geo_bypass_country': 'US',
-            'no_cache_dir': True,
+            "geo_bypass": True,
+            "geo_bypass_country": "US",
+            "no_cache_dir": True,
         }
-        
+
         # Strategy-specific settings
         if strategy == 1:
-            opts['extractor_args'] = {
-                'youtube': {'player_client': ['ios', 'web']}
-            }
+            opts["extractor_args"] = {"youtube": {"player_client": ["ios", "web"]}}
         elif strategy == 2:
-            opts['extractor_args'] = {
-                'youtube': {'player_client': ['android', 'web']}
-            }
+            opts["extractor_args"] = {"youtube": {"player_client": ["android", "web"]}}
         elif strategy == 3:
-            opts['extractor_args'] = {
-                'youtube': {'player_client': ['web']}
-            }
-        
+            opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
+
         # Add cookies
         if self.cookie_file and os.path.exists(self.cookie_file):
-            opts['cookiefile'] = self.cookie_file
-        
+            opts["cookiefile"] = self.cookie_file
+
         # Add proxy
         if self.proxy:
-            opts['proxy'] = self.proxy
-        
+            opts["proxy"] = self.proxy
+
         return opts
-    
-    async def extract(
-        self, 
-        video_url: str,
-        method: str = "direct"
-    ) -> ExtractionResult:
+
+    async def extract(self, video_url: str, method: str = "direct") -> ExtractionResult:
         """
         Extract video download URL.
-        
+
         Args:
             video_url: YouTube video URL
             method: Extraction method description
-            
+
         Returns:
             ExtractionResult with extraction details
         """
         start_time = asyncio.get_event_loop().time()
         video_id = self._extract_video_id(video_url)
-        
+
         for strategy in [1, 2, 3]:
             try:
                 opts = self._build_opts(strategy)
-                
+
                 loop = asyncio.get_event_loop()
-                
+
                 def do_extract():
                     with yt_dlp.YoutubeDL(opts) as ydl:
                         return ydl.extract_info(video_url, download=False)
-                
+
                 info = await loop.run_in_executor(None, do_extract)
-                
+
                 # Extract best format URL
                 download_url = None
                 resolution = None
-                
-                formats = info.get('formats', [])
-                
+
+                formats = info.get("formats", [])
+
                 # Find best video+audio format
                 for fmt in reversed(formats):
-                    if fmt.get('url') and fmt.get('vcodec') != 'none':
-                        download_url = fmt.get('url')
-                        height = fmt.get('height', 0)
+                    if fmt.get("url") and fmt.get("vcodec") != "none":
+                        download_url = fmt.get("url")
+                        height = fmt.get("height", 0)
                         if height:
                             resolution = f"{height}p"
                         break
-                
+
                 # Fallback to any format with URL
                 if not download_url:
                     for fmt in formats:
-                        if fmt.get('url'):
-                            download_url = fmt.get('url')
+                        if fmt.get("url"):
+                            download_url = fmt.get("url")
                             break
-                
+
                 elapsed = (asyncio.get_event_loop().time() - start_time) * 1000
-                
+
                 return ExtractionResult(
                     success=True,
                     video_id=video_id,
-                    title=info.get('title'),
-                    duration=info.get('duration'),
+                    title=info.get("title"),
+                    duration=info.get("duration"),
                     formats_count=len(formats),
                     download_url=download_url,
                     resolution=resolution,
                     method=method,
-                    extraction_time_ms=elapsed
+                    extraction_time_ms=elapsed,
                 )
-                
+
             except Exception as e:
                 error_msg = str(e).lower()
-                
+
                 # Check for bot detection
-                if any(kw in error_msg for kw in [
-                    'sign in', 'bot', 'captcha', 'unusual traffic', 
-                    'rate limit', 'too many requests'
-                ]):
+                if any(
+                    kw in error_msg
+                    for kw in [
+                        "sign in",
+                        "bot",
+                        "captcha",
+                        "unusual traffic",
+                        "rate limit",
+                        "too many requests",
+                    ]
+                ):
                     elapsed = (asyncio.get_event_loop().time() - start_time) * 1000
                     return ExtractionResult(
                         success=False,
                         video_id=video_id,
                         error=f"Bot detection: {str(e)[:100]}",
                         method=method,
-                        extraction_time_ms=elapsed
+                        extraction_time_ms=elapsed,
                     )
-                
+
                 # Try next strategy
                 continue
-        
+
         elapsed = (asyncio.get_event_loop().time() - start_time) * 1000
         return ExtractionResult(
             success=False,
             video_id=video_id,
             error="All strategies failed",
             method=method,
-            extraction_time_ms=elapsed
+            extraction_time_ms=elapsed,
         )
-    
+
     def _extract_video_id(self, url: str) -> str:
         """Extract video ID from YouTube URL."""
         patterns = [
-            r'(?:v=|/)([0-9A-Za-z_-]{11})(?:[&?/]|$)',
-            r'youtu\.be/([0-9A-Za-z_-]{11})',
+            r"(?:v=|/)([0-9A-Za-z_-]{11})(?:[&?/]|$)",
+            r"youtu\.be/([0-9A-Za-z_-]{11})",
         ]
         for pattern in patterns:
             match = re.search(pattern, url)
@@ -360,16 +368,17 @@ class YouTubeExtractor:
 # Pytest Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def config():
     """Test configuration."""
     cfg = TestConfig()
-    
+
     # Check for local proxy in environment
-    proxy = os.getenv('YOUTUBE_PROXY') or os.getenv('https_proxy')
+    proxy = os.getenv("YOUTUBE_PROXY") or os.getenv("https_proxy")
     if proxy:
         cfg.local_proxy = proxy
-    
+
     return cfg
 
 
@@ -383,93 +392,98 @@ def cookie_file(config):
 # Test Cases
 # ============================================================================
 
+
 class TestYtdlpWithAgentGo:
     """Test suite for yt-dlp integration with AgentGo cookies and proxy."""
-    
+
     @pytest.mark.asyncio
     async def test_cookie_file_exists(self, config, cookie_file):
         """Test 1: Verify cookie file exists and is valid."""
         logger.info("=" * 60)
         logger.info("TEST 1: Cookie File Validation")
         logger.info("=" * 60)
-        
+
         if not cookie_file:
             logger.warning("No cookie file found at any of:")
             for path in config.cookie_paths:
                 logger.warning(f"  - {path}")
             pytest.skip("No cookie file found - run AgentGo login first")
-        
+
         is_valid, details = validate_cookie_file(cookie_file)
-        
+
         logger.info(f"Cookie file: {cookie_file}")
         logger.info(f"Valid format: {is_valid}")
         logger.info(f"Details: {json.dumps(details, indent=2)}")
-        
+
         assert is_valid, f"Cookie file invalid: {details.get('error')}"
-        assert details.get('total_cookies', 0) > 0, "Cookie file is empty"
-        
+        assert details.get("total_cookies", 0) > 0, "Cookie file is empty"
+
         # Check for YouTube/Google cookies
-        yt_cookies = details.get('youtube_cookies', 0)
-        g_cookies = details.get('google_cookies', 0)
+        yt_cookies = details.get("youtube_cookies", 0)
+        g_cookies = details.get("google_cookies", 0)
         logger.info(f"YouTube cookies: {yt_cookies}, Google cookies: {g_cookies}")
-        
-        if details.get('has_auth_cookies'):
+
+        if details.get("has_auth_cookies"):
             logger.info("Has authentication cookies - login appears valid")
         else:
             logger.warning("Missing some auth cookies - may not be fully authenticated")
-    
+
     @pytest.mark.asyncio
     async def test_direct_extraction(self, config):
         """Test 2: Direct yt-dlp extraction without cookies or proxy."""
         logger.info("=" * 60)
         logger.info("TEST 2: Direct Extraction (no cookies/proxy)")
         logger.info("=" * 60)
-        
+
         extractor = YouTubeExtractor()
         video = config.test_videos[0]
-        
+
         logger.info(f"Testing video: {video['title']}")
         logger.info(f"URL: {video['url']}")
-        
-        result = await extractor.extract(video['url'], method="direct")
-        
+
+        result = await extractor.extract(video["url"], method="direct")
+
         logger.info(f"Success: {result.success}")
         logger.info(f"Time: {result.extraction_time_ms:.0f}ms")
-        
+
         if result.success:
             logger.info(f"Title: {result.title}")
             logger.info(f"Duration: {result.duration}s")
             logger.info(f"Formats: {result.formats_count}")
             logger.info(f"Resolution: {result.resolution}")
-            logger.info(f"Download URL: {result.download_url[:80]}..." if result.download_url else "No URL")
+            logger.info(
+                f"Download URL: {result.download_url[:80]}..."
+                if result.download_url
+                else "No URL"
+            )
         else:
             logger.warning(f"Error: {result.error}")
             # This is expected to fail in some regions/IPs
-        
+
         # We don't assert success here - direct extraction often fails
         # We just log the result for comparison
-    
+
     @pytest.mark.asyncio
     async def test_extraction_with_cookies(self, config, cookie_file):
         """Test 3: yt-dlp extraction with cookies."""
         logger.info("=" * 60)
         logger.info("TEST 3: Extraction with Cookies")
         logger.info("=" * 60)
-        
+
         if not cookie_file:
             pytest.skip("No cookie file available")
-        
+
         extractor = YouTubeExtractor(cookie_file=cookie_file)
         video = config.test_videos[0]
-        
+
         logger.info(f"Testing video: {video['title']}")
         logger.info(f"Cookie file: {cookie_file}")
-        
-        result = await extractor.extract(video['url'], method="cookies")
-        
+
+        result = await extractor.extract(video["url"], method="cookies")
+
         logger.info(f"Success: {result.success}")
         logger.info(f"Time: {result.extraction_time_ms:.0f}ms")
-        
+
         if result.success:
             logger.info(f"Title: {result.title}")
             logger.info(f"Duration: {result.duration}s")
@@ -481,39 +495,36 @@ class TestYtdlpWithAgentGo:
                 logger.warning("No download URL extracted")
         else:
             logger.error(f"Error: {result.error}")
-        
+
         assert result.success, f"Extraction with cookies failed: {result.error}"
         assert result.download_url, "No download URL extracted"
-    
+
     @pytest.mark.asyncio
     async def test_extraction_with_proxy_and_cookies(self, config, cookie_file):
         """Test 4: yt-dlp extraction with proxy + cookies."""
         logger.info("=" * 60)
         logger.info("TEST 4: Extraction with Proxy + Cookies")
         logger.info("=" * 60)
-        
+
         if not config.local_proxy:
             logger.warning("No proxy configured (YOUTUBE_PROXY or https_proxy)")
             pytest.skip("No proxy available")
-        
+
         if not cookie_file:
             pytest.skip("No cookie file available")
-        
-        extractor = YouTubeExtractor(
-            cookie_file=cookie_file,
-            proxy=config.local_proxy
-        )
+
+        extractor = YouTubeExtractor(cookie_file=cookie_file, proxy=config.local_proxy)
         video = config.test_videos[0]
-        
+
         logger.info(f"Testing video: {video['title']}")
         logger.info(f"Proxy: {config.local_proxy}")
         logger.info(f"Cookie file: {cookie_file}")
-        
-        result = await extractor.extract(video['url'], method="proxy+cookies")
-        
+
+        result = await extractor.extract(video["url"], method="proxy+cookies")
+
         logger.info(f"Success: {result.success}")
         logger.info(f"Time: {result.extraction_time_ms:.0f}ms")
-        
+
         if result.success:
             logger.info(f"Title: {result.title}")
             logger.info(f"Formats: {result.formats_count}")
@@ -522,115 +533,127 @@ class TestYtdlpWithAgentGo:
                 logger.info("Download URL extracted successfully!")
         else:
             logger.error(f"Error: {result.error}")
-        
+
         assert result.success, f"Extraction with proxy+cookies failed: {result.error}"
-    
+
     @pytest.mark.asyncio
     async def test_multiple_videos(self, config, cookie_file):
         """Test 5: Extract multiple videos to verify consistency."""
         logger.info("=" * 60)
         logger.info("TEST 5: Multiple Video Extraction")
         logger.info("=" * 60)
-        
+
         if not cookie_file:
             pytest.skip("No cookie file available")
-        
+
         extractor = YouTubeExtractor(cookie_file=cookie_file)
         results = []
-        
+
         for video in config.test_videos:
             logger.info(f"\nExtracting: {video['title']}")
-            result = await extractor.extract(video['url'], method="cookies")
+            result = await extractor.extract(video["url"], method="cookies")
             results.append(result)
-            
+
             status = "✓" if result.success else "✗"
-            logger.info(f"  {status} {result.video_id}: "
-                       f"{'OK' if result.success else result.error}")
-            
+            logger.info(
+                f"  {status} {result.video_id}: "
+                f"{'OK' if result.success else result.error}"
+            )
+
             # Small delay between requests
             await asyncio.sleep(1)
-        
+
         # Summary
         successful = sum(1 for r in results if r.success)
         logger.info("\n=== Summary ===")
         logger.info(f"Successful: {successful}/{len(results)}")
-        
+
         for result in results:
             status = "✓" if result.success else "✗"
-            logger.info(f"  {status} {result.video_id}: {result.extraction_time_ms:.0f}ms")
-        
+            logger.info(
+                f"  {status} {result.video_id}: {result.extraction_time_ms:.0f}ms"
+            )
+
         # At least half should succeed
-        assert successful >= len(results) // 2, \
+        assert successful >= len(results) // 2, (
             f"Too many failures: {successful}/{len(results)}"
-    
+        )
+
     @pytest.mark.asyncio
     async def test_download_url_validity(self, config, cookie_file):
         """Test 6: Verify extracted download URL is accessible."""
         logger.info("=" * 60)
         logger.info("TEST 6: Download URL Validity Check")
         logger.info("=" * 60)
-        
+
         if not cookie_file:
             pytest.skip("No cookie file available")
-        
+
         import aiohttp
-        
+
         extractor = YouTubeExtractor(cookie_file=cookie_file)
         video = config.test_videos[0]
-        
+
         # First extract the URL
-        result = await extractor.extract(video['url'], method="cookies")
-        
+        result = await extractor.extract(video["url"], method="cookies")
+
         if not result.success or not result.download_url:
             pytest.skip(f"Could not extract URL: {result.error}")
-        
+
         logger.info("Testing URL accessibility...")
         logger.info(f"URL length: {len(result.download_url)}")
-        
+
         # Check if URL is accessible (HEAD request)
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.head(
                     result.download_url,
                     allow_redirects=True,
-                    timeout=aiohttp.ClientTimeout(total=30)
+                    timeout=aiohttp.ClientTimeout(total=30),
                 ) as response:
                     logger.info(f"HTTP Status: {response.status}")
-                    logger.info(f"Content-Type: {response.headers.get('Content-Type', 'N/A')}")
-                    content_length = response.headers.get('Content-Length')
+                    logger.info(
+                        f"Content-Type: {response.headers.get('Content-Type', 'N/A')}"
+                    )
+                    content_length = response.headers.get("Content-Length")
                     if content_length:
                         size_mb = int(content_length) / (1024 * 1024)
                         logger.info(f"Content-Length: {size_mb:.1f} MB")
-                    
-                    assert response.status == 200, f"URL not accessible: HTTP {response.status}"
+
+                    assert response.status == 200, (
+                        f"URL not accessible: HTTP {response.status}"
+                    )
                     logger.info("Download URL is accessible!")
-                    
+
         except Exception as e:
             logger.error(f"URL check failed: {e}")
             # URLs often expire quickly, so this is not a hard failure
-            logger.warning("Note: YouTube URLs expire quickly, this may not indicate a problem")
+            logger.warning(
+                "Note: YouTube URLs expire quickly, this may not indicate a problem"
+            )
 
 
 # ============================================================================
 # Standalone Runner
 # ============================================================================
 
+
 async def run_standalone_tests():
     """Run tests without pytest for quick verification."""
     print("=" * 70)
     print("yt-dlp + AgentGo Cookies Integration Test")
     print("=" * 70)
-    
+
     config = TestConfig()
-    
+
     # Check for proxy
-    proxy = os.getenv('YOUTUBE_PROXY') or os.getenv('https_proxy')
+    proxy = os.getenv("YOUTUBE_PROXY") or os.getenv("https_proxy")
     if proxy:
         config.local_proxy = proxy
         print(f"Proxy: {proxy}")
     else:
         print("Proxy: Not configured")
-    
+
     # Find cookie file
     cookie_file = find_cookie_file(config.cookie_paths)
     if cookie_file:
@@ -642,23 +665,23 @@ async def run_standalone_tests():
     else:
         print("Cookie file: Not found")
         print("  Run AgentGo login to generate cookies first")
-    
+
     print("=" * 70)
-    
+
     # Test 1: Direct extraction (baseline)
     print("\n[Test 1] Direct Extraction (no cookies)...")
     extractor = YouTubeExtractor()
-    result = await extractor.extract(config.test_videos[0]['url'], "direct")
+    result = await extractor.extract(config.test_videos[0]["url"], "direct")
     print(f"  Result: {'PASS' if result.success else 'FAIL'}")
     print(f"  Time: {result.extraction_time_ms:.0f}ms")
     if not result.success:
         print(f"  Error: {result.error}")
-    
+
     # Test 2: With cookies
     if cookie_file:
         print("\n[Test 2] Extraction with Cookies...")
         extractor = YouTubeExtractor(cookie_file=cookie_file)
-        result = await extractor.extract(config.test_videos[0]['url'], "cookies")
+        result = await extractor.extract(config.test_videos[0]["url"], "cookies")
         print(f"  Result: {'PASS' if result.success else 'FAIL'}")
         print(f"  Time: {result.extraction_time_ms:.0f}ms")
         if result.success:
@@ -667,12 +690,12 @@ async def run_standalone_tests():
             print(f"  Has URL: {bool(result.download_url)}")
         else:
             print(f"  Error: {result.error}")
-    
+
     # Test 3: With proxy + cookies
     if cookie_file and config.local_proxy:
         print("\n[Test 3] Extraction with Proxy + Cookies...")
         extractor = YouTubeExtractor(cookie_file=cookie_file, proxy=config.local_proxy)
-        result = await extractor.extract(config.test_videos[0]['url'], "proxy+cookies")
+        result = await extractor.extract(config.test_videos[0]["url"], "proxy+cookies")
         print(f"  Result: {'PASS' if result.success else 'FAIL'}")
         print(f"  Time: {result.extraction_time_ms:.0f}ms")
         if result.success:
@@ -680,7 +703,7 @@ async def run_standalone_tests():
             print(f"  Has URL: {bool(result.download_url)}")
         else:
             print(f"  Error: {result.error}")
-    
+
     # Summary
     print("\n" + "=" * 70)
     print("SUMMARY:")

@@ -2,6 +2,7 @@
 Aliyun OSS storage service.
 Handles file uploads and generates public URLs.
 """
+
 import oss2
 import asyncio
 import logging
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class StorageError(Exception):
     """Custom exception for storage failures."""
+
     pass
 
 
@@ -25,17 +27,17 @@ class OSSStorage:
     Aliyun OSS storage client.
     Handles file uploads and URL generation.
     """
-    
+
     def __init__(
         self,
         access_key_id: Optional[str] = None,
         access_key_secret: Optional[str] = None,
         bucket_name: Optional[str] = None,
-        endpoint: Optional[str] = None
+        endpoint: Optional[str] = None,
     ):
         """
         Initialize OSS client.
-        
+
         Args:
             access_key_id: Aliyun access key ID
             access_key_secret: Aliyun access key secret
@@ -46,150 +48,147 @@ class OSSStorage:
         self.access_key_secret = access_key_secret or settings.oss_access_key_secret
         self.bucket_name = bucket_name or settings.oss_bucket
         self.endpoint = endpoint or settings.oss_endpoint
-        
+
         # Initialize auth
         self.auth = oss2.Auth(self.access_key_id, self.access_key_secret)
-        
+
         # Initialize bucket (we'll control proxy via environment variables)
         self.bucket = oss2.Bucket(self.auth, self.endpoint, self.bucket_name)
-    
+
     def _get_content_type(self, file_path: str) -> str:
         """Determine content type from file extension."""
         content_type, _ = mimetypes.guess_type(file_path)
-        return content_type or 'application/octet-stream'
-    
+        return content_type or "application/octet-stream"
+
     def _disable_proxy_env(self) -> dict:
         """Temporarily disable proxy environment variables for OSS access."""
         saved = {}
-        for key in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
+        for key in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
             if key in os.environ:
                 saved[key] = os.environ.pop(key)
         return saved
-    
+
     def _restore_proxy_env(self, saved: dict):
         """Restore proxy environment variables."""
         for key, value in saved.items():
             os.environ[key] = value
-    
+
     async def upload_file(
-        self,
-        local_path: str,
-        object_key: str,
-        content_type: Optional[str] = None
+        self, local_path: str, object_key: str, content_type: Optional[str] = None
     ) -> str:
         """
         Upload file to OSS.
-        
+
         Args:
             local_path: Local file path
             object_key: OSS object key (path in bucket)
             content_type: Optional content type override
-            
+
         Returns:
             Public URL of uploaded file
-            
+
         Raises:
             StorageError: If upload fails
         """
         if not Path(local_path).exists():
             raise StorageError(f"Local file not found: {local_path}")
-        
+
         if content_type is None:
             content_type = self._get_content_type(local_path)
-        
+
         loop = asyncio.get_event_loop()
-        
+
         def do_upload():
             # Temporarily disable proxy for OSS access
             saved_proxy = self._disable_proxy_env()
             try:
-                headers = {'Content-Type': content_type}
-                with open(local_path, 'rb') as f:
+                headers = {"Content-Type": content_type}
+                with open(local_path, "rb") as f:
                     result = self.bucket.put_object(object_key, f, headers=headers)
                 return result
             finally:
                 self._restore_proxy_env(saved_proxy)
-        
+
         try:
             logger.info(f"Uploading {local_path} to OSS: {object_key}")
             result = await loop.run_in_executor(None, do_upload)
-            
+
             if result.status != 200:
                 raise StorageError(f"Upload failed with status: {result.status}")
-            
+
             url = self.get_public_url(object_key)
             logger.info(f"Upload successful: {url}")
-            
+
             return url
-            
+
         except oss2.exceptions.OssError as e:
             logger.error(f"OSS upload error: {e}")
             raise StorageError(f"OSS upload failed: {e}")
-    
+
     async def upload_data(
         self,
         data: bytes,
         object_key: str,
-        content_type: str = 'application/octet-stream'
+        content_type: str = "application/octet-stream",
     ) -> str:
         """
         Upload bytes data to OSS.
-        
+
         Args:
             data: Bytes data to upload
             object_key: OSS object key
             content_type: Content type
-            
+
         Returns:
             Public URL of uploaded data
         """
         loop = asyncio.get_event_loop()
-        
+
         def do_upload():
-            headers = {'Content-Type': content_type}
+            headers = {"Content-Type": content_type}
             result = self.bucket.put_object(object_key, data, headers=headers)
             return result
-        
+
         try:
             logger.info(f"Uploading data to OSS: {object_key}")
             result = await loop.run_in_executor(None, do_upload)
-            
+
             if result.status != 200:
                 raise StorageError(f"Upload failed with status: {result.status}")
-            
+
             return self.get_public_url(object_key)
-            
+
         except oss2.exceptions.OssError as e:
             logger.error(f"OSS upload error: {e}")
             raise StorageError(f"OSS upload failed: {e}")
-    
+
     def get_public_url(self, object_key: str) -> str:
         """
         Generate public URL for OSS object.
-        
+
         Args:
             object_key: OSS object key
-            
+
         Returns:
             Public URL (bucket must have public read permission)
         """
         return f"https://{self.bucket_name}.{self.endpoint}/{object_key}"
-    
+
     async def delete_file(self, object_key: str) -> bool:
         """
         Delete file from OSS.
-        
+
         Args:
             object_key: OSS object key
-            
+
         Returns:
             True if successful
         """
         loop = asyncio.get_event_loop()
-        
+
         def do_delete():
             self.bucket.delete_object(object_key)
-        
+
         try:
             await loop.run_in_executor(None, do_delete)
             logger.info(f"Deleted from OSS: {object_key}")
@@ -197,22 +196,22 @@ class OSSStorage:
         except Exception as e:
             logger.error(f"Failed to delete from OSS: {e}")
             return False
-    
+
     async def check_exists(self, object_key: str) -> bool:
         """
         Check if object exists in OSS.
-        
+
         Args:
             object_key: OSS object key
-            
+
         Returns:
             True if exists
         """
         loop = asyncio.get_event_loop()
-        
+
         def do_check():
             return self.bucket.object_exists(object_key)
-        
+
         try:
             return await loop.run_in_executor(None, do_check)
         except Exception as e:
