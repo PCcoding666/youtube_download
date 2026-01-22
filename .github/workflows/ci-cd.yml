@@ -20,6 +20,17 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags
+
+      - name: Verify package-lock.json exists
+        run: |
+          if [ ! -f frontend/package-lock.json ]; then
+            echo "Error: frontend/package-lock.json not found!"
+            ls -la frontend/
+            exit 1
+          fi
+          echo "✅ package-lock.json found"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
