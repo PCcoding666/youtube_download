@@ -29,7 +29,6 @@ import asyncio
 import aiohttp
 import os
 import sys
-import json
 import time
 import argparse
 from pathlib import Path

@@ -389,7 +389,6 @@ class YouTubeURLExtractor:
     
     def _build_opts(self, strategy: int = 1) -> Dict[str, Any]:
         """Build yt-dlp options for URL extraction."""
-        from app.config import settings
         
         opts = {
             'noplaylist': True,

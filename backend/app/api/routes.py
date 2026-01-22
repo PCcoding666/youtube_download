@@ -2,13 +2,10 @@
 API routes for video processing.
 """
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Response, Request
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 import asyncio
 import logging
-import json
 import time
-import urllib.parse
-from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 import shutil
@@ -31,7 +28,7 @@ from app.models import (
 from app.config import settings
 from app.services.downloader import YouTubeDownloader, DownloadError, get_proxy_rotator
 from app.services.transcriber import ParaformerTranscriber
-from app.services.storage import OSSStorage, get_storage
+from app.services.storage import get_storage
 from app.utils.ffmpeg_tools import extract_audio, check_ffmpeg_installed
 
 logger = logging.getLogger(__name__)

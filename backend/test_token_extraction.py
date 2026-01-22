@@ -37,7 +37,7 @@ async def test_token_extraction():
     url_option_value = urllib.parse.quote(json.dumps(options))
     full_ws_url = f"{ws_url}?launch-options={url_option_value}"
     
-    print(f"连接到 AgentGo 浏览器...")
+    print("连接到 AgentGo 浏览器...")
     
     async with async_playwright() as p:
         try:

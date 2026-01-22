@@ -50,7 +50,7 @@ def get_po_token():
 
 async def get_agentgo_auth():
     """从 AgentGo 获取 Visitor Data 和 Cookies"""
-    print(f"\n[2] 获取 Visitor Data + Cookies from AgentGo")
+    print("\n[2] 获取 Visitor Data + Cookies from AgentGo")
     
     try:
         from app.services.agentgo_service import get_agentgo_service
@@ -61,7 +61,7 @@ async def get_agentgo_auth():
             print("    ❌ AgentGo 未配置 (检查 AGENTGO_API_KEY)")
             return None, None
         
-        print(f"    正在请求 AgentGo (region: us)...")
+        print("    正在请求 AgentGo (region: us)...")
         auth_bundle = await service.get_youtube_authentication_bundle(
             force_refresh=True,
             region='us'
@@ -91,7 +91,7 @@ def test_download(po_token, visitor_data, cookie_file):
     """使用完整认证测试下载"""
     proxy = os.environ.get('HTTP_PROXY', 'http://127.0.0.1:7890')
     
-    print(f"\n[3] 测试 yt-dlp 下载")
+    print("\n[3] 测试 yt-dlp 下载")
     print(f"    Proxy: {proxy}")
     print(f"    PO Token: {'✅' if po_token else '❌'}")
     print(f"    Visitor Data: {'✅' if visitor_data else '❌'}")
@@ -155,7 +155,7 @@ def test_download(po_token, visitor_data, cookie_file):
             print(f"    可用格式数: {len(formats)}")
             
             if formats:
-                print(f"\n    部分可用格式:")
+                print("\n    部分可用格式:")
                 for f in formats[:5]:
                     res = f.get('height', 'audio')
                     ext = f.get('ext', '?')
@@ -169,7 +169,7 @@ def test_download(po_token, visitor_data, cookie_file):
             print(f"    ❌ 策略失败: {error_msg[:100]}...")
             continue
     
-    print(f"\n    ❌ 所有策略都失败了")
+    print("\n    ❌ 所有策略都失败了")
     return False
 
 

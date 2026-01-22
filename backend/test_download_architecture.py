@@ -14,13 +14,11 @@ import os
 import time
 import json
 import subprocess
-from pathlib import Path
 
 sys.path.insert(0, '.')
 
 from app.services.url_extractor import YouTubeURLExtractor
 from app.services.agentgo_service import get_agentgo_service
-from app.services.storage import upload_video
 from app.config import settings
 
 
@@ -188,7 +186,7 @@ async def test_architecture(video_url: str, resolution: str = '720'):
         print('     - 网络不稳定')
         print('\n  建议: 部署到新加坡服务器后直连，速度会更快')
     else:
-        print(f'\n  ✅ 下载速度正常')
+        print('\n  ✅ 下载速度正常')
     
     # IP 一致性分析
     print('\n  IP 一致性:')

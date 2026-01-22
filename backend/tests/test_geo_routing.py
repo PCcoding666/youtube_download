@@ -3,9 +3,7 @@ Test suite for intelligent geo-routing functionality.
 Validates IP detection, country-to-region mapping, and region-aware cookie caching.
 """
 import pytest
-import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
-from pathlib import Path
 
 
 class TestGeoService:
@@ -13,7 +11,7 @@ class TestGeoService:
     
     def test_country_to_region_mapping(self):
         """Test country code to AgentGo region mapping."""
-        from app.services.geo_service import COUNTRY_TO_REGION, DEFAULT_REGION, get_region_from_country
+        from app.services.geo_service import DEFAULT_REGION, get_region_from_country
         
         # Test specific country mappings
         assert get_region_from_country('US') == 'us'
@@ -173,7 +171,6 @@ class TestRouteGeoIntegration:
     def test_get_client_ip_direct(self):
         """Test client IP extraction from direct connection."""
         from app.api.routes import get_client_ip
-        from unittest.mock import MagicMock
         
         # Mock request with direct connection
         request = MagicMock()
@@ -186,7 +183,6 @@ class TestRouteGeoIntegration:
     def test_get_client_ip_forwarded(self):
         """Test client IP extraction from X-Forwarded-For header."""
         from app.api.routes import get_client_ip
-        from unittest.mock import MagicMock
         
         # Mock request with forwarded header
         request = MagicMock()
@@ -199,7 +195,6 @@ class TestRouteGeoIntegration:
     def test_get_client_ip_real_ip_header(self):
         """Test client IP extraction from X-Real-IP header."""
         from app.api.routes import get_client_ip
-        from unittest.mock import MagicMock
         
         # Mock request with X-Real-IP header
         request = MagicMock()
@@ -216,7 +211,7 @@ class TestEndToEndGeoRouting:
     @pytest.mark.asyncio
     async def test_region_detection_workflow(self):
         """Test complete region detection workflow."""
-        from app.services.geo_service import GeoIPService, get_region_from_country
+        from app.services.geo_service import GeoIPService
         
         service = GeoIPService()
         

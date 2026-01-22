@@ -38,7 +38,7 @@ async def test_agentgo_youtube_access():
     url_option_value = urllib.parse.quote(json.dumps(options))
     full_ws_url = f"{ws_url}?launch-options={url_option_value}"
     
-    print(f"连接到 AgentGo 浏览器 (region: us)...")
+    print("连接到 AgentGo 浏览器 (region: us)...")
     
     async with async_playwright() as p:
         try:
@@ -121,7 +121,7 @@ async def test_agentgo_youtube_access():
                     else:
                         print("   ⚠️ Visitor Data 未找到")
                 else:
-                    print(f"   ⚠️ 可能不是预期的视频页面")
+                    print("   ⚠️ 可能不是预期的视频页面")
                     
             except Exception as e:
                 print(f"   ❌ 视频页面访问失败: {e}")

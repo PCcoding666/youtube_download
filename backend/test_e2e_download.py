@@ -22,7 +22,7 @@ TARGET_URL = "https://www.youtube.com/watch?v=1PaoWKvcJP0"
 def get_po_token():
     """从 bgutil 获取 PO Token"""
     bgutil_url = os.environ.get('BGUTIL_URL', 'http://127.0.0.1:4416')
-    print(f"\n[1] 获取 PO Token...")
+    print("\n[1] 获取 PO Token...")
     
     try:
         response = requests.post(
@@ -37,7 +37,7 @@ def get_po_token():
             data = response.json()
             po_token = data.get('poToken')
             if po_token:
-                print(f"    ✅ PO Token 获取成功")
+                print("    ✅ PO Token 获取成功")
                 return po_token
         return None
     except Exception as e:
@@ -47,7 +47,7 @@ def get_po_token():
 
 async def get_agentgo_auth():
     """从 AgentGo 获取认证"""
-    print(f"\n[2] 获取 AgentGo 认证...")
+    print("\n[2] 获取 AgentGo 认证...")
     
     try:
         from app.services.agentgo_service import get_agentgo_service
@@ -63,7 +63,7 @@ async def get_agentgo_auth():
         )
         
         if auth_bundle:
-            print(f"    ✅ Visitor Data + Cookies 获取成功")
+            print("    ✅ Visitor Data + Cookies 获取成功")
             return auth_bundle.visitor_data, auth_bundle.cookie_file_path
         return None, None
     except Exception as e:
@@ -92,7 +92,7 @@ def download_video(url, po_token, visitor_data, cookie_file, resolution="1080"):
     
     if po_token:
         youtube_args['po_token'] = [f'mweb.gvs+{po_token}']
-        print(f"    使用 PO Token: ✅")
+        print("    使用 PO Token: ✅")
     
     def progress_hook(d):
         if d['status'] == 'downloading':
@@ -100,7 +100,7 @@ def download_video(url, po_token, visitor_data, cookie_file, resolution="1080"):
             speed = d.get('_speed_str', '?')
             print(f"\r    下载中: {percent} @ {speed}        ", end='', flush=True)
         elif d['status'] == 'finished':
-            print(f"\n    ✅ 片段下载完成")
+            print("\n    ✅ 片段下载完成")
     
     # 格式：1080p 视频 + 最佳音频
     format_str = f'bestvideo[height<={resolution}]+bestaudio/best[height<={resolution}]/best'
@@ -143,7 +143,7 @@ def download_video(url, po_token, visitor_data, cookie_file, resolution="1080"):
         
         if os.path.exists(filename):
             size_mb = os.path.getsize(filename) / (1024 * 1024)
-            print(f"\n    ✅ 下载成功!")
+            print("\n    ✅ 下载成功!")
             print(f"    文件: {filename}")
             print(f"    大小: {size_mb:.2f} MB")
             print(f"    耗时: {elapsed:.1f}s")
@@ -155,12 +155,12 @@ def download_video(url, po_token, visitor_data, cookie_file, resolution="1080"):
                 if info.get('id') in f:
                     filepath = os.path.join(OUTPUT_DIR, f)
                     size_mb = os.path.getsize(filepath) / (1024 * 1024)
-                    print(f"\n    ✅ 下载成功!")
+                    print("\n    ✅ 下载成功!")
                     print(f"    文件: {filepath}")
                     print(f"    大小: {size_mb:.2f} MB")
                     return filepath
             
-            print(f"\n    ❌ 文件未找到")
+            print("\n    ❌ 文件未找到")
             return None
             
     except Exception as e:

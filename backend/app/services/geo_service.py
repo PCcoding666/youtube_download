@@ -4,7 +4,7 @@ Identifies user's geographic location from IP address and maps to AgentGo region
 """
 import logging
 import aiohttp
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Tuple
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -231,7 +231,7 @@ class GeoIPService:
         if self._geoip_reader:
             try:
                 self._geoip_reader.close()
-            except:
+            except Exception:
                 pass
 
 

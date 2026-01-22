@@ -8,7 +8,7 @@ import yt_dlp
 import asyncio
 import logging
 import time
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple
 from pathlib import Path
 import re
 
@@ -152,7 +152,7 @@ class YouTubeDownloader:
         # Add PO Token if available
         if po_token:
             extractor_args['youtube']['po_token'] = [f"mweb.gvs+{po_token}"]
-            logger.info(f"✓ Configured yt-dlp with PO Token")
+            logger.info("✓ Configured yt-dlp with PO Token")
         
         # Add visitor data if available (from AgentGo)
         if auth_bundle.visitor_data:
@@ -344,7 +344,7 @@ class YouTubeDownloader:
                     po_token = provider.get_po_token()
                     if po_token:
                         config['extractor_args']['youtube']['po_token'] = [f"mweb.gvs+{po_token}"]
-                        logger.info(f"✓ Got PO Token from bgutil server")
+                        logger.info("✓ Got PO Token from bgutil server")
             except Exception as e:
                 logger.warning(f"Failed to get PO Token: {e}")
         

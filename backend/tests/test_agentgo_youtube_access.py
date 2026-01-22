@@ -28,15 +28,13 @@ Usage:
 
 import pytest
 import asyncio
-import aiohttp
 import websockets
 import json
 import os
 import logging
 import urllib.parse
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
-from datetime import datetime
 
 # Configure logging for test output
 logging.basicConfig(
@@ -304,7 +302,7 @@ class TestAgentGoSession:
         successful = sum(1 for r in results.values() if r.success)
         total = len(results)
         
-        logger.info(f"\n=== Region Test Summary ===")
+        logger.info("\n=== Region Test Summary ===")
         logger.info(f"Successful: {successful}/{total}")
         
         for region, result in results.items():

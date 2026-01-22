@@ -80,7 +80,7 @@ async def test_extract_and_merge():
         return False
     
     # 3. 用 FFmpeg 下载
-    print(f"\n[3] FFmpeg 下载...")
+    print("\n[3] FFmpeg 下载...")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
     start_time = time.time()
@@ -92,7 +92,7 @@ async def test_extract_and_merge():
     # 根据是否是 m3u8 流式来构建不同的 FFmpeg 命令
     if is_streaming:
         # m3u8 流式下载 - 单个 URL 包含视频+音频
-        print(f"    📺 模式: m3u8 流式下载")
+        print("    📺 模式: m3u8 流式下载")
         cmd = [
             'ffmpeg', '-y',
             '-hide_banner',
@@ -112,7 +112,7 @@ async def test_extract_and_merge():
         ]
     elif needs_merge and audio_url:
         # 分离的视频+音频流 - 需要合并
-        print(f"    📺 模式: 视频+音频分离下载并合并")
+        print("    📺 模式: 视频+音频分离下载并合并")
         cmd = [
             'ffmpeg', '-y',
             '-hide_banner',
@@ -136,7 +136,7 @@ async def test_extract_and_merge():
         ]
     else:
         # 单个 URL（可能已包含音频）
-        print(f"    📺 模式: 单文件下载")
+        print("    📺 模式: 单文件下载")
         cmd = [
             'ffmpeg', '-y',
             '-hide_banner',
@@ -163,7 +163,7 @@ async def test_extract_and_merge():
         print(f"    预估总大小: {total_size_mb:.1f} MB")
     else:
         total_size_mb = 0
-        print(f"    预估总大小: 未知 (m3u8 流式)")
+        print("    预估总大小: 未知 (m3u8 流式)")
     
     # 打印调试信息
     print(f"\n    [DEBUG] FFmpeg 命令前10个参数: {cmd[:10]}")
@@ -171,14 +171,14 @@ async def test_extract_and_merge():
     if audio_url:
         print(f"    [DEBUG] 音频URL: {audio_url[:80]}...")
     
-    print(f"\n    开始下载...", flush=True)
+    print("\n    开始下载...", flush=True)
     
     env = os.environ.copy()
     env['http_proxy'] = proxy
     env['https_proxy'] = proxy
     
     try:
-        print(f"    [DEBUG] 启动 FFmpeg...", flush=True)
+        print("    [DEBUG] 启动 FFmpeg...", flush=True)
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -223,7 +223,7 @@ async def test_extract_and_merge():
                                     else:
                                         # m3u8 没有预估大小，只显示已下载和速度
                                         print(f"\r    📊 {current_mb:.1f} MB | {avg_speed:.0f} KB/s | {elapsed:.0f}s   ", end='', flush=True)
-                        except:
+                        except Exception:
                             pass
                     elif ('error' in line.lower() and 'error=' not in line.lower()) or 'failed' in line.lower():
                         # 真正的错误，排除 FFmpeg 的 error= 统计信息
@@ -244,7 +244,7 @@ async def test_extract_and_merge():
         if process.returncode == 0 and os.path.exists(output_file):
             size_mb = os.path.getsize(output_file) / (1024 * 1024)
             avg_speed = (size_mb * 1024) / elapsed if elapsed > 0 else 0
-            print(f"\n    ✅ 下载成功!")
+            print("\n    ✅ 下载成功!")
             print(f"    文件: {output_file}")
             print(f"    大小: {size_mb:.2f} MB")
             print(f"    耗时: {elapsed:.1f}s")

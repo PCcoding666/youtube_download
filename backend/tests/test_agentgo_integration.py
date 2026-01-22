@@ -6,7 +6,7 @@ from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime
 
 from app.services.agentgo_service import AgentGoService, get_agentgo_service
-from app.models import AuthenticationBundle, TokenExtractionResult
+from app.models import AuthenticationBundle
 
 
 class TestAgentGoServiceIntegration:

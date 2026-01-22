@@ -5,7 +5,6 @@ AgentGo连接诊断脚本 - 改进版
 """
 import asyncio
 import sys
-import os
 sys.path.append('.')
 
 from app.config import settings

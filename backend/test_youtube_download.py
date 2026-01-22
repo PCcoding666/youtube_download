@@ -5,7 +5,6 @@
 """
 import asyncio
 import sys
-import os
 sys.path.append('.')
 
 from app.services.downloader import YouTubeDownloader
@@ -28,7 +27,7 @@ async def test_youtube_download():
         auth_bundle = await service.get_youtube_authentication_bundle(region="us")
         
         if auth_bundle:
-            print(f"✅ 认证bundle获取成功")
+            print("✅ 认证bundle获取成功")
             print(f"   Cookies: {len(auth_bundle.cookies)} 个")
             print(f"   PO Token: {'✅' if auth_bundle.po_token else '❌'}")
             print(f"   Visitor Data: {'✅' if auth_bundle.visitor_data else '❌'}")
@@ -112,7 +111,7 @@ async def main():
     """主函数"""
     success = await test_youtube_download()
     
-    print(f"\n=== 测试结果 ===")
+    print("\n=== 测试结果 ===")
     if success:
         print("✅ YouTube下载功能正常工作!")
         print("   系统能够成功提取视频信息，应该能够下载视频")

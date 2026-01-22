@@ -48,7 +48,6 @@ except ImportError:
     HAS_PLAYWRIGHT = False
     print("[!] Playwright not installed. Some features may be limited.")
 
-import aiohttp
 
 
 class AgentGoCookieExtractor:
@@ -126,16 +125,16 @@ class AgentGoCookieExtractor:
                     timeout=60000  # 60 second timeout
                 )
                 
-                print(f"[+] Connected to AgentGo browser!")
+                print("[+] Connected to AgentGo browser!")
                 
                 # Get or create context
                 contexts = browser.contexts
                 if contexts:
                     context = contexts[0]
-                    print(f"[*] Using existing browser context")
+                    print("[*] Using existing browser context")
                 else:
                     context = await browser.new_context()
-                    print(f"[*] Created new browser context")
+                    print("[*] Created new browser context")
                 
                 # Create new page
                 page = await context.new_page()
@@ -160,7 +159,7 @@ class AgentGoCookieExtractor:
                         await self._perform_login(page, email, password)
                 
                 # Extract cookies from context
-                print(f"[*] Extracting cookies...")
+                print("[*] Extracting cookies...")
                 cookies = await context.cookies()
                 
                 # Filter for YouTube/Google cookies
@@ -186,7 +185,7 @@ class AgentGoCookieExtractor:
     
     async def _perform_login(self, page: Page, email: str, password: str):
         """Perform Google login for YouTube."""
-        print(f"[*] Starting login process...")
+        print("[*] Starting login process...")
         
         try:
             # Click sign in button
@@ -302,7 +301,7 @@ async def test_ytdlp_with_cookies(cookie_file: str, video_url: str = "https://ww
         print("[!] yt-dlp not installed")
         return False
     
-    print(f"\n[*] Testing yt-dlp with cookies...")
+    print("\n[*] Testing yt-dlp with cookies...")
     print(f"[*] Cookie file: {cookie_file}")
     print(f"[*] Video URL: {video_url}")
     
@@ -321,7 +320,7 @@ async def test_ytdlp_with_cookies(cookie_file: str, video_url: str = "https://ww
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
             
-            print(f"[+] Extraction successful!")
+            print("[+] Extraction successful!")
             print(f"    Title: {info.get('title')}")
             print(f"    Duration: {info.get('duration')}s")
             print(f"    Formats: {len(info.get('formats', []))}")

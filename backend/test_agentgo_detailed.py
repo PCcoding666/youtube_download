@@ -5,7 +5,6 @@ AgentGo详细诊断脚本
 """
 import asyncio
 import sys
-import os
 import json
 import aiohttp
 sys.path.append('.')
@@ -45,7 +44,7 @@ async def test_agentgo_api_directly():
                 print(f"   ❌ API健康检查失败: {e}")
             
             # 测试WebSocket端点
-            print(f"\n2. 测试WebSocket连接能力")
+            print("\n2. 测试WebSocket连接能力")
             ws_url = "wss://app.browsers.live"
             print(f"   WebSocket URL: {ws_url}")
             

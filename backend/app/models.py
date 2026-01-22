@@ -2,7 +2,7 @@
 Pydantic models for request/response validation.
 """
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, field_validator
 from enum import Enum
 from datetime import datetime
 import uuid

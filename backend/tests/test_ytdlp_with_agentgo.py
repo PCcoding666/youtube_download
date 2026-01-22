@@ -42,10 +42,8 @@ import os
 import json
 import logging
 import re
-from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -554,7 +552,7 @@ class TestYtdlpWithAgentGo:
         
         # Summary
         successful = sum(1 for r in results if r.success)
-        logger.info(f"\n=== Summary ===")
+        logger.info("\n=== Summary ===")
         logger.info(f"Successful: {successful}/{len(results)}")
         
         for result in results:
@@ -586,7 +584,7 @@ class TestYtdlpWithAgentGo:
         if not result.success or not result.download_url:
             pytest.skip(f"Could not extract URL: {result.error}")
         
-        logger.info(f"Testing URL accessibility...")
+        logger.info("Testing URL accessibility...")
         logger.info(f"URL length: {len(result.download_url)}")
         
         # Check if URL is accessible (HEAD request)

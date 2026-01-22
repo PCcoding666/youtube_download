@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Test bgutil PO Token provider connection and yt-dlp integration."""
-import asyncio
 import sys
 import os
 
@@ -73,7 +72,7 @@ def test_ytdlp_with_po_token(po_token: str):
     """Test yt-dlp with manually provided PO Token."""
     proxy = os.environ.get('HTTP_PROXY') or os.environ.get('YOUTUBE_PROXY')
     
-    print(f"\n=== Testing yt-dlp with PO Token ===")
+    print("\n=== Testing yt-dlp with PO Token ===")
     print(f"Proxy: {proxy or 'None'}")
     
     # Test video URL
@@ -106,7 +105,7 @@ def test_ytdlp_with_po_token(po_token: str):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(test_url, download=False)
             
-        print(f"\n✅ Successfully extracted video info!")
+        print("\n✅ Successfully extracted video info!")
         print(f"   Title: {info.get('title')}")
         print(f"   Duration: {info.get('duration')}s")
         print(f"   Uploader: {info.get('uploader')}")
@@ -150,8 +149,8 @@ def main():
     
     print("\n" + "=" * 60)
     print("Test Results:")
-    print(f"  bgutil server: ✅ OK")
-    print(f"  PO Token fetch: ✅ OK")
+    print("  bgutil server: ✅ OK")
+    print("  PO Token fetch: ✅ OK")
     print(f"  yt-dlp + PO Token: {'✅ OK' if ytdlp_ok else '❌ FAILED'}")
     print("=" * 60)
     

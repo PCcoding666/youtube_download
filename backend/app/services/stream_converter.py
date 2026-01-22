@@ -8,7 +8,7 @@ import os
 import uuid
 import time
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +203,7 @@ class StreamConverter:
             filename = str(uuid.uuid4())
         output_file = os.path.join(output_dir, f"{filename}.mp4")
         
-        logger.info(f"Starting stream merge conversion")
+        logger.info("Starting stream merge conversion")
         logger.info(f"Video URL: {video_url[:80]}...")
         if audio_url:
             logger.info(f"Audio URL: {audio_url[:80]}...")
