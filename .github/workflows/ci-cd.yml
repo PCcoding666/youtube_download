@@ -2,28 +2,21 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, master]
+    branches: [ main, develop ]
   pull_request:
-    branches: [main, master]
+    branches: [ main ]
 
 env:
-  NODE_VERSION: '20'
-  PYTHON_VERSION: '3.11'
-  REGISTRY: ghcr.io
-  IMAGE_BACKEND: youtube-download-backend
-  IMAGE_FRONTEND: youtube-download-frontend
+  REGISTRY: registry.cn-hangzhou.aliyuncs.com
+  NAMESPACE: youtube-download
+  BACKEND_IMAGE: backend
+  FRONTEND_IMAGE: frontend
 
 jobs:
-  # ============================================
-  # Frontend CI - Lint, Type Check, Build
-  # ============================================
+  # Frontend CI Job
   frontend-ci:
     name: Frontend CI
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -31,104 +24,98 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '18'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
+        working-directory: frontend
         run: npm ci
 
       - name: Type check
-        run: npm run build -- --mode production
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://api.example.com' }}
+        working-directory: frontend
+        run: npm run type-check
 
-      - name: Build
+      - name: Build frontend
+        working-directory: frontend
         run: npm run build
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://api.example.com' }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
-          path: frontend/dist
-          retention-days: 7
+          path: frontend/dist/
+          retention-days: 1
 
-  # ============================================
-  # Backend CI - Lint, Type Check, Test
-  # ============================================
+  # Backend CI Job
   backend-ci:
     name: Backend CI
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
+        working-directory: backend
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio httpx
+          pip install ruff pytest
 
-      - name: Run linting (optional)
+      - name: Lint with ruff
+        working-directory: backend
         run: |
-          pip install ruff
-          ruff check app/ --ignore E501 || true
-        continue-on-error: true
+          ruff check .
+          ruff format --check .
 
       - name: Run tests
+        working-directory: backend
         run: |
-          pytest tests/ -v || echo "No tests found, skipping..."
-        continue-on-error: true
-        env:
-          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          # 只运行单元测试，跳过需要外部服务的集成测试
+          pytest tests/ -v --tb=short -k "not (agentgo or bgutil or integration)"
 
-  # ============================================
-  # Build and Push Docker Images to GitHub Container Registry
-  # ============================================
+  # Build and Push Images
   build-and-push:
-    name: Build and Push Images
-    needs: [frontend-ci, backend-ci]
+    name: Build & Push Images
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    permissions:
-      contents: read
-      packages: write
-
+    needs: [frontend-ci, backend-ci]
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      backend-tag: ${{ steps.meta-backend.outputs.tags }}
+      frontend-tag: ${{ steps.meta-frontend.outputs.tags }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Download frontend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GitHub Container Registry
+      - name: Login to Aliyun Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
 
       - name: Extract metadata for backend
         id: meta-backend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_BACKEND }}
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.BACKEND_IMAGE }}
           tags: |
+            type=ref,event=branch
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
@@ -136,124 +123,186 @@ jobs:
         id: meta-frontend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_FRONTEND }}
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.FRONTEND_IMAGE }}
           tags: |
+            type=ref,event=branch
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
+          context: backend
+          file: backend/Dockerfile
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          platforms: linux/amd64
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
-          context: ./frontend
+          context: frontend
+          file: frontend/Dockerfile
           push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            VITE_API_URL=${{ vars.VITE_API_URL }}
+          platforms: linux/amd64
 
-  # ============================================
-  # Deploy to Server with Zero Downtime
-  # ============================================
+  # Deploy to Production
   deploy:
-    name: Deploy to Server
-    needs: [build-and-push]
+    name: Deploy to Production
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment: production
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to server via SSH
+      - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.0
-        env:
-          REGISTRY: ${{ env.REGISTRY }}
-          REPO_OWNER: ${{ github.repository_owner }}
-          IMAGE_BACKEND: ${{ env.IMAGE_BACKEND }}
-          IMAGE_FRONTEND: ${{ env.IMAGE_FRONTEND }}
-          GHCR_TOKEN: ${{ secrets.GHCR_PAT }}
-          GHCR_USER: ${{ secrets.GHCR_USER }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || 22 }}
-          envs: REGISTRY,REPO_OWNER,IMAGE_BACKEND,IMAGE_FRONTEND,GHCR_TOKEN,GHCR_USER
+          port: ${{ secrets.SERVER_PORT }}
           script: |
             set -e
             
-            # Navigate to project directory
-            cd /opt/youtube_download || exit 1
+            # 设置变量
+            REGISTRY="${{ env.REGISTRY }}"
+            NAMESPACE="${{ env.NAMESPACE }}"
+            BACKEND_TAG="${{ needs.build-and-push.outputs.backend-tag }}"
+            FRONTEND_TAG="${{ needs.build-and-push.outputs.frontend-tag }}"
+            DEPLOY_DIR="/opt/youtube-download"
+            BACKUP_DIR="/opt/youtube-download/backups"
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
             
-            # Login to GitHub Container Registry
-            echo "$GHCR_TOKEN" | docker login $REGISTRY -u "$GHCR_USER" --password-stdin
+            echo "🚀 开始部署 - $TIMESTAMP"
             
-            # Pull latest images
-            echo "Pulling latest images..."
-            docker pull $REGISTRY/$REPO_OWNER/$IMAGE_BACKEND:latest
-            docker pull $REGISTRY/$REPO_OWNER/$IMAGE_FRONTEND:latest
+            # 创建部署目录
+            sudo mkdir -p $DEPLOY_DIR $BACKUP_DIR
+            cd $DEPLOY_DIR
             
-            # Update docker-compose.yml with new images
-            export BACKEND_IMAGE=$REGISTRY/$REPO_OWNER/$IMAGE_BACKEND:latest
-            export FRONTEND_IMAGE=$REGISTRY/$REPO_OWNER/$IMAGE_FRONTEND:latest
+            # 创建备份
+            echo "💾 创建部署备份..."
+            sudo mkdir -p $BACKUP_DIR/$TIMESTAMP
+            if [ -f docker-compose.yml ]; then
+              sudo cp docker-compose.yml $BACKUP_DIR/$TIMESTAMP/
+            fi
+            if [ -f .env.production ]; then
+              sudo cp .env.production $BACKUP_DIR/$TIMESTAMP/
+            fi
             
-            # Rolling update with zero downtime
-            echo "Performing rolling update..."
-            docker-compose up -d --no-deps --build backend
+            # 登录到阿里云镜像仓库
+            echo "🔐 登录镜像仓库..."
+            echo "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}" | sudo docker login $REGISTRY -u "${{ secrets.ALIYUN_REGISTRY_USERNAME }}" --password-stdin
             
-            # Wait for backend health check
-            echo "Waiting for backend to be healthy..."
+            # 拉取最新镜像
+            echo "📥 拉取最新镜像..."
+            sudo docker pull $BACKEND_TAG
+            sudo docker pull $FRONTEND_TAG
+            
+            # 更新 docker-compose.yml
+            echo "📝 更新 docker-compose 配置..."
+            sudo tee docker-compose.yml > /dev/null <<EOF
+            version: '3.8'
+            
+            services:
+              backend:
+                image: $BACKEND_TAG
+                container_name: youtube-download-backend
+                restart: unless-stopped
+                ports:
+                  - "8000:8000"
+                env_file:
+                  - .env.production
+                volumes:
+                  - ./downloads:/app/downloads
+                  - ./logs:/app/logs
+                networks:
+                  - youtube-download
+                healthcheck:
+                  test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 3
+                  start_period: 40s
+            
+              frontend:
+                image: $FRONTEND_TAG
+                container_name: youtube-download-frontend
+                restart: unless-stopped
+                ports:
+                  - "80:80"
+                  - "443:443"
+                depends_on:
+                  backend:
+                    condition: service_healthy
+                networks:
+                  - youtube-download
+            
+            networks:
+              youtube-download:
+                driver: bridge
+            
+            volumes:
+              downloads:
+              logs:
+            EOF
+            
+            # 滚动更新后端
+            echo "🔄 更新后端服务..."
+            sudo docker-compose up -d backend
+            
+            # 等待后端健康检查
+            echo "🏥 等待后端健康检查..."
             for i in {1..30}; do
-              if docker exec yt-transcriber-backend curl -f http://localhost:8000/api/v1/health > /dev/null 2>&1; then
-                echo "Backend is healthy!"
+              if sudo docker-compose exec -T backend curl -f http://localhost:8000/api/v1/health > /dev/null 2>&1; then
+                echo "✅ 后端健康检查通过"
                 break
               fi
               if [ $i -eq 30 ]; then
-                echo "Backend health check failed!"
-                docker-compose logs backend --tail=50
+                echo "❌ 后端健康检查失败，开始回滚..."
+                sudo docker-compose down
+                if [ -f $BACKUP_DIR/$TIMESTAMP/docker-compose.yml ]; then
+                  sudo cp $BACKUP_DIR/$TIMESTAMP/docker-compose.yml ./
+                  sudo docker-compose up -d
+                fi
                 exit 1
               fi
-              echo "Waiting for backend... ($i/30)"
+              echo "⏳ 等待后端启动... ($i/30)"
               sleep 2
             done
             
-            # Update frontend
-            docker-compose up -d --no-deps --build frontend
+            # 更新前端
+            echo "🎨 更新前端服务..."
+            sudo docker-compose up -d frontend
             
-            # Wait for frontend
-            sleep 5
-            
-            # Clean up old images
-            echo "Cleaning up old images..."
-            docker image prune -f
-            
-            echo "Deployment successful!"
-
-      - name: Health check after deployment
-        run: |
-          echo "Performing final health check..."
-          for i in {1..10}; do
-            if curl -f ${{ secrets.SERVER_URL }}/api/v1/health > /dev/null 2>&1; then
-              echo "✅ Health check passed!"
-              exit 0
+            # 最终健康检查
+            echo "🔍 最终健康检查..."
+            sleep 10
+            if ! curl -f http://localhost > /dev/null 2>&1; then
+              echo "❌ 前端健康检查失败，开始回滚..."
+              sudo docker-compose down
+              if [ -f $BACKUP_DIR/$TIMESTAMP/docker-compose.yml ]; then
+                sudo cp $BACKUP_DIR/$TIMESTAMP/docker-compose.yml ./
+                sudo docker-compose up -d
+              fi
+              exit 1
             fi
-            echo "Waiting for service... ($i/10)"
-            sleep 3
-          done
-          echo "❌ Health check failed!"
-          exit 1
+            
+            # 清理旧镜像和备份
+            echo "🧹 清理旧资源..."
+            sudo docker image prune -f
+            
+            # 保留最近5个备份
+            cd $BACKUP_DIR
+            sudo ls -t | tail -n +6 | sudo xargs -r rm -rf
+            
+            echo "✅ 部署成功完成！"
 
       - name: Send success notification
         if: success()
@@ -262,15 +311,15 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            ✅ Deployment Successful!
+            ✅ **部署成功**
             
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            Message: ${{ github.event.head_commit.message }}
+            📦 **仓库**: ${{ github.repository }}
+            🌿 **分支**: ${{ github.ref_name }}
+            💬 **提交**: ${{ github.event.head_commit.message }}
+            👤 **作者**: ${{ github.actor }}
+            🚀 **服务**: https://${{ secrets.SERVER_HOST }}
             
-            🚀 Service is now running at ${{ secrets.SERVER_URL }}
+            🕐 **时间**: $(date '+%Y-%m-%d %H:%M:%S')
 
       - name: Send failure notification
         if: failure()
@@ -279,11 +328,12 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            ❌ Deployment Failed!
+            ❌ **部署失败**
             
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
+            📦 **仓库**: ${{ github.repository }}
+            🌿 **分支**: ${{ github.ref_name }}
+            💬 **提交**: ${{ github.event.head_commit.message }}
+            👤 **作者**: ${{ github.actor }}
+            🔗 **日志**: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
             
-            Please check GitHub Actions logs for details.
+            🕐 **时间**: $(date '+%Y-%m-%d %H:%M:%S')

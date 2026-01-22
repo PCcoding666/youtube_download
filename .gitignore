@@ -9,6 +9,8 @@ __pycache__/
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
 
 # Build outputs
 dist/
@@ -34,3 +36,37 @@ Thumbs.db
 coverage/
 .coverage
 htmlcov/
+
+# Docker
+.dockerignore
+
+# CI/CD
+.github/secrets/
+deployment-backup-*/
+
+# Local development
+downloads/
+logs/
+backups/
+
+# SSH keys (if accidentally placed in project)
+*.pem
+*.key
+id_rsa*
+known_hosts
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache
+.cache/
+.npm/
+.yarn/
+.pnpm-store/
+
+# Runtime
+*.pid
+*.seed
+*.pid.lock

@@ -1,5 +1,5 @@
-# Frontend Dockerfile
-FROM node:20-alpine as builder
+# Multi-stage build for frontend
+FROM node:20-alpine as base
 
 WORKDIR /app
 
@@ -9,6 +9,21 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
+# Development stage
+FROM base as development
+
+# Copy source code
+COPY . .
+
+# Expose port for development server
+EXPOSE 3000
+
+# Development command
+CMD ["npm", "run", "dev"]
+
+# Build stage
+FROM base as builder
+
 # Copy source code
 COPY . .
 
@@ -16,7 +31,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine
+FROM nginx:alpine as production
 
 # Copy built assets
 COPY --from=builder /app/dist /usr/share/nginx/html

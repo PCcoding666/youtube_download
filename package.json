@@ -1,0 +1,43 @@
+{
+  "name": "youtube-download",
+  "version": "1.0.0",
+  "description": "YouTube 视频下载服务",
+  "private": true,
+  "scripts": {
+    "dev:setup": "./scripts/dev-setup.sh",
+    "dev:start": "docker-compose -f docker-compose.dev.yml up -d",
+    "dev:stop": "docker-compose -f docker-compose.dev.yml down",
+    "dev:restart": "npm run dev:stop && npm run dev:start",
+    "dev:logs": "docker-compose -f docker-compose.dev.yml logs -f",
+    "dev:logs:backend": "docker-compose -f docker-compose.dev.yml logs -f backend",
+    "dev:logs:frontend": "docker-compose -f docker-compose.dev.yml logs -f frontend",
+    "dev:shell:backend": "docker-compose -f docker-compose.dev.yml exec backend bash",
+    "dev:shell:frontend": "docker-compose -f docker-compose.dev.yml exec frontend sh",
+    "dev:build": "docker-compose -f docker-compose.dev.yml build",
+    "dev:clean": "docker-compose -f docker-compose.dev.yml down -v --remove-orphans && docker system prune -f",
+    "test:backend": "cd backend && python -m pytest tests/ -v",
+    "test:frontend": "cd frontend && npm run test",
+    "lint:backend": "cd backend && ruff check . && ruff format --check .",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:fix:backend": "cd backend && ruff check --fix . && ruff format .",
+    "lint:fix:frontend": "cd frontend && npm run lint:fix",
+    "build:prod": "./scripts/deploy-manual.sh",
+    "deploy:manual": "./scripts/deploy-manual.sh",
+    "health:check": "curl -f http://localhost:8000/api/v1/health && curl -f http://localhost:3000"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PCcoding666/youtube_download.git"
+  },
+  "author": "PCcoding666",
+  "license": "MIT"
+}
