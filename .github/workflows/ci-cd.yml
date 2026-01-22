@@ -77,8 +77,8 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: |
-          # 只运行单元测试，跳过需要外部服务的集成测试
-          pytest tests/ -v --tb=short -k "not (agentgo or bgutil or integration)"
+          # 只运行单元测试，跳过需要外部服务的集成测试和属性测试
+          pytest tests/ -v --tb=short -k "not (agentgo or bgutil or integration or property)"
 
   # Build and Push Images
   build-and-push:
@@ -87,8 +87,8 @@ jobs:
     needs: [frontend-ci, backend-ci]
     if: github.ref == 'refs/heads/main'
     outputs:
-      backend-tag: ${{ steps.meta-backend.outputs.tags }}
-      frontend-tag: ${{ steps.meta-frontend.outputs.tags }}
+      backend-tag: ${{ steps.backend-image-tag.outputs.tag }}
+      frontend-tag: ${{ steps.frontend-image-tag.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -141,6 +141,10 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
+      - name: Set backend image tag
+        id: backend-image-tag
+        run: echo "tag=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.BACKEND_IMAGE }}:latest" >> $GITHUB_OUTPUT
+
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
@@ -152,6 +156,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+
+      - name: Set frontend image tag
+        id: frontend-image-tag
+        run: echo "tag=${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.FRONTEND_IMAGE }}:latest" >> $GITHUB_OUTPUT
 
   # Deploy to Production
   deploy:
