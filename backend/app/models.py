@@ -239,7 +239,7 @@ class TokenExtractionResult(BaseModel):
     @classmethod
     def validate_extraction_method(cls, v):
         """Validate extraction method is one of the expected values."""
-        valid_methods = ["network_intercept", "javascript", "combined", "fallback"]
+        valid_methods = ["network_intercept", "javascript", "combined", "fallback", "visitor_data_only"]
         if v not in valid_methods:
             raise ValueError(f"extraction_method must be one of: {', '.join(valid_methods)}")
         return v

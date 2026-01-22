@@ -418,9 +418,8 @@ class YouTubeURLExtractor:
         youtube_args = {}
         
         if strategy == 1:
-            # Strategy 1: Use multiple clients for best format availability
-            # android_sdkless + web_safari give direct https URLs
-            # web client is SABR-restricted but bgutil provides PO Token
+            # Strategy 1: Use android_sdkless first (gives direct https URLs without PO Token)
+            # Then web_safari + web as fallback (bgutil provides PO Token for web)
             youtube_args['player_client'] = ['android_sdkless', 'web_safari', 'web']
         elif strategy == 2:
             # Strategy 2: iOS + web fallback

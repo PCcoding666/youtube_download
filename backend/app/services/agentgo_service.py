@@ -958,12 +958,16 @@ class TokenExtractor:
     
     async def extract_tokens_with_timeout(self, page, timeout: int = 90, video_url: Optional[str] = None) -> TokenExtractionResult:
         """
-        Extract both PO token and visitor data with timeout handling and comprehensive monitoring.
+        Extract visitor data with timeout handling and comprehensive monitoring.
+        
+        NOTE: PO Token extraction has been removed from AgentGo.
+        PO Token should be provided by bgutil (localhost:4416).
+        AgentGo's role is only to provide Cookies + Visitor Data.
         
         Args:
             page: Playwright page object
             timeout: Maximum time to spend on extraction
-            video_url: Optional specific YouTube video URL to use for token extraction
+            video_url: Optional specific YouTube video URL to use for extraction
             
         Returns:
             TokenExtractionResult with extraction results and performance metrics
@@ -1023,7 +1027,7 @@ class TokenExtractor:
             
             # Extract visitor data FIRST (just JavaScript, no page interaction needed)
             # This should be done before PO token extraction which involves scrolling
-            self.logger.info("Extracting visitor data first (JavaScript only)...")
+            self.logger.info("Extracting visitor data (JavaScript only)...")
             try:
                 visitor_data = await asyncio.wait_for(
                     self._extract_visitor_data_js_only(page),
@@ -1036,20 +1040,10 @@ class TokenExtractor:
             except Exception as e:
                 self.logger.warning(f"Visitor data extraction failed: {e}")
             
-            # Then extract PO token (involves page interaction)
-            self.logger.info("Extracting PO token (with page interaction)...")
-            remaining_timeout = max(30, timeout - (time.time() - start_time))
-            try:
-                po_token = await asyncio.wait_for(
-                    self.extract_po_token(page, video_url),
-                    timeout=remaining_timeout
-                )
-                if po_token:
-                    self.logger.info(f"✅ PO token extracted successfully")
-            except asyncio.TimeoutError:
-                self.logger.warning("PO token extraction timed out")
-            except Exception as e:
-                self.logger.warning(f"PO token extraction failed: {e}")
+            # NOTE: PO Token extraction is SKIPPED here
+            # PO Token should be provided by bgutil (localhost:4416), not AgentGo
+            # AgentGo's role is only to provide Cookies + Visitor Data
+            po_token = None
             
             # Handle exceptions from tasks
             if isinstance(po_token, Exception):
@@ -1067,16 +1061,16 @@ class TokenExtractor:
                 visitor_data = None
             
             extraction_duration = time.time() - start_time
-            success = bool(po_token or visitor_data)
+            # Success is based on visitor_data only (PO Token comes from bgutil)
+            success = bool(visitor_data)
             
             # Log extraction results with performance metrics
             if success:
                 self._log_secure(
                     logging.INFO,
-                    f"Combined token extraction completed successfully (operation: {operation_id})",
+                    f"Token extraction completed successfully (operation: {operation_id})",
                     {
                         'duration_seconds': round(extraction_duration, 2),
-                        'po_token_found': bool(po_token),
                         'visitor_data_found': bool(visitor_data),
                         'timeout_used': timeout
                     }
@@ -1084,7 +1078,7 @@ class TokenExtractor:
             else:
                 self._log_secure(
                     logging.WARNING,
-                    f"Combined token extraction completed with no tokens (operation: {operation_id})",
+                    f"Token extraction completed with no visitor data (operation: {operation_id})",
                     {
                         'duration_seconds': round(extraction_duration, 2),
                         'timeout_used': timeout
@@ -1093,10 +1087,10 @@ class TokenExtractor:
             
             return TokenExtractionResult(
                 success=success,
-                po_token=po_token,
+                po_token=None,  # PO Token comes from bgutil, not AgentGo
                 visitor_data=visitor_data,
-                error_message=None if success else "No tokens extracted",
-                extraction_method="combined",
+                error_message=None if success else "No visitor data extracted",
+                extraction_method="visitor_data_only",
                 extraction_duration=extraction_duration
             )
             

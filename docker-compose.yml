@@ -32,6 +32,8 @@ services:
       - YOUTUBE_PASSWORD=${YOUTUBE_PASSWORD}
       - TEMP_DIR=/tmp/video_processing
       - LOG_LEVEL=INFO
+      # bgutil PO Token provider URL (container name in Docker network)
+      - BGUTIL_URL=http://bgutil:4416
       - CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:80
     depends_on:
       bgutil:

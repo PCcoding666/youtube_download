@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # HTTP Proxy for YouTube access (used by yt-dlp)
     http_proxy: Optional[str] = None
     
+    # bgutil PO Token provider URL
+    # In Docker: http://bgutil:4416 (container name)
+    # Local: http://127.0.0.1:4416
+    bgutil_url: str = "http://127.0.0.1:4416"
+    
     # GeoIP Configuration
     geoip_db_path: Optional[str] = None
     enable_geo_routing: bool = True
