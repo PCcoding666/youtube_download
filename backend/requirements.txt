@@ -7,6 +7,10 @@ python-multipart>=0.0.6
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 
+# Supabase (Auth + Database)
+supabase>=2.0.0
+PyJWT>=2.8.0
+
 # YouTube Download (always use latest for YouTube compatibility)
 yt-dlp
 

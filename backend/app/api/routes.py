@@ -2,7 +2,7 @@
 API routes for video processing.
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Response, Request
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Response, Request, Depends, Header
 from typing import Dict, Optional
 import asyncio
 import logging
@@ -30,6 +30,7 @@ from app.config import settings
 from app.services.downloader import YouTubeDownloader, DownloadError, get_proxy_rotator
 from app.services.transcriber import ParaformerTranscriber
 from app.services.storage import get_storage
+from app.services.auth_service import get_auth_service, get_current_user, require_auth
 from app.utils.ffmpeg_tools import extract_audio, check_ffmpeg_installed
 
 logger = logging.getLogger(__name__)
@@ -791,29 +792,121 @@ async def prefetch_cookies_for_region(region: str):
 
 
 # ============================================================================
-# Direct URL Extraction API (no server-side download)
+# User Quota API
+# ============================================================================
+
+
+@router.get("/user/quota")
+async def get_user_quota(current_user: dict = Depends(require_auth)):
+    """
+    Get current user's quota information.
+    
+    Requires authentication.
+    """
+    auth_service = get_auth_service()
+    user_id = current_user.get("sub")
+    
+    if not auth_service.is_configured():
+        return {
+            "configured": False,
+            "message": "Quota system not configured (dev mode)"
+        }
+    
+    quota = await auth_service.get_user_quota(user_id)
+    
+    if not quota:
+        # Create default quota
+        await auth_service._create_default_quota(user_id)
+        quota = await auth_service.get_user_quota(user_id)
+    
+    return {
+        "configured": True,
+        "user_id": user_id,
+        "quota": {
+            "monthly_limit": quota.get("monthly_video_limit", 0),
+            "monthly_used": quota.get("monthly_videos_used", 0),
+            "remaining": quota.get("monthly_video_limit", 0) - quota.get("monthly_videos_used", 0),
+            "reset_date": quota.get("reset_date"),
+            "storage_limit_mb": quota.get("total_storage_mb", 0),
+            "storage_used_mb": quota.get("used_storage_mb", 0),
+            "max_video_duration_seconds": quota.get("max_video_duration_seconds", 300),
+            "priority_processing": quota.get("priority_processing", False)
+        }
+    }
+
+
+@router.get("/user/history")
+async def get_user_history(
+    current_user: dict = Depends(require_auth),
+    limit: int = 20
+):
+    """
+    Get user's download history.
+    
+    Requires authentication.
+    """
+    auth_service = get_auth_service()
+    user_id = current_user.get("sub")
+    
+    if not auth_service.is_configured() or not auth_service.supabase:
+        return {"configured": False, "videos": []}
+    
+    try:
+        response = auth_service.supabase.table("videos").select(
+            "video_id, title, original_url, oss_video_url, video_resolution, video_size, created_at"
+        ).eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+        
+        return {
+            "configured": True,
+            "videos": response.data or []
+        }
+    except Exception as e:
+        logger.error(f"Failed to get user history: {e}")
+        return {"configured": True, "videos": [], "error": str(e)}
+
+
+# ============================================================================
+# Direct URL Extraction API (download to server, upload to OSS)
 # ============================================================================
 
 
 @router.post("/extract", response_model=ExtractURLResponse)
-async def extract_direct_urls(request_data: ExtractURLRequest, request: Request):
+async def extract_direct_urls(
+    request_data: ExtractURLRequest,
+    request: Request,
+    current_user: Optional[dict] = Depends(get_current_user)
+):
     """
-    Extract direct download URLs from YouTube video.
+    Download YouTube video and upload to OSS.
+
+    Requires authentication if Supabase is configured.
+    Checks and deducts user quota before processing.
 
     Workflow:
-    1. Detect user's region based on IP address
-    2. Fetch authentication bundle from AgentGo for that region
-    3. Use authentication to extract YouTube direct URLs via yt-dlp
-    4. Return googlevideo.com direct links to frontend
+    1. Verify user authentication (if configured)
+    2. Check user quota
+    3. Download video using yt-dlp via subprocess
+    4. Upload to OSS
+    5. Deduct quota and log usage
+    6. Return OSS download URL
 
     Args:
         request_data: YouTube URL and preferred resolution
         request: FastAPI request object for IP detection
+        current_user: Authenticated user from JWT (optional)
 
     Returns:
-        Direct download URLs and video metadata
+        OSS download URLs and video metadata
     """
+    import uuid
+    import subprocess
+    import json
+    from pathlib import Path
+    import shutil
+
     start_time = time.time()
+    task_id = str(uuid.uuid4())[:8]
+    temp_dir = Path(settings.temp_dir) / f"extract_{task_id}"
 
     # Validate URL
     if not request_data.youtube_url.startswith(
@@ -821,213 +914,238 @@ async def extract_direct_urls(request_data: ExtractURLRequest, request: Request)
     ):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
 
-    try:
-        from app.services.url_extractor import extract_youtube_urls
-        from app.services.agentgo_service import get_agentgo_service
+    # Initialize variables for error handling
+    client_ip = None
+    country_code = None
+    region = None
+    user_id = None
 
-        # Step 1: Get region based on user's IP
+    # Check authentication and quota
+    auth_service = get_auth_service()
+    if auth_service.is_configured():
+        if not current_user:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required. Please login to use this service."
+            )
+        
+        user_id = current_user.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid user token")
+        
+        # Check and reserve quota
+        quota_ok, quota_msg = await auth_service.check_and_deduct_quota(user_id)
+        if not quota_ok:
+            raise HTTPException(status_code=402, detail=quota_msg)
+        
+        logger.info(f"[{task_id}] User {user_id} - {quota_msg}")
+
+    try:
+        from app.services.storage import get_storage
+
+        # Create temp directory
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get region based on user's IP
         region, country_code, client_ip = await get_region_for_request(request)
         logger.info(
-            f"Extracting direct URLs for: {request_data.youtube_url[:50]}... "
-            f"(IP: {client_ip}, Country: {country_code}, Region: {region})"
+            f"[{task_id}] Download request: {request_data.youtube_url[:50]}... "
+            f"(IP: {client_ip}, Resolution: {request_data.resolution.value}, User: {user_id or 'anonymous'})"
         )
 
-        # Step 2: Get authentication bundle from AgentGo for this region
-        auth_bundle = None
-        agentgo_service = get_agentgo_service()
+        # Step 1: Download video using subprocess (more stable than async yt-dlp)
+        download_start = time.time()
+        logger.info(f"[{task_id}] Starting download via subprocess...")
 
-        if agentgo_service.is_configured():
-            try:
-                logger.info(
-                    f"Fetching AgentGo authentication bundle for region: {region}"
-                )
-                auth_bundle = await asyncio.wait_for(
-                    agentgo_service.get_youtube_authentication_bundle(
-                        region=region, video_url=request_data.youtube_url
-                    ),
-                    timeout=90,  # 90 seconds for auth bundle
-                )
-                if auth_bundle:
-                    logger.info(
-                        f"Got authentication bundle: cookies={len(auth_bundle.cookies) if auth_bundle.cookies else 0}, "
-                        f"po_token={'yes' if auth_bundle.po_token else 'no'}, "
-                        f"visitor_data={'yes' if auth_bundle.visitor_data else 'no'}"
-                    )
-                else:
-                    logger.warning(
-                        f"Failed to get authentication bundle for region {region}"
-                    )
-            except asyncio.TimeoutError:
-                logger.warning(f"AgentGo authentication timed out for region {region}")
-            except Exception as e:
-                logger.warning(
-                    f"AgentGo authentication failed for region {region}: {e}"
-                )
+        resolution = request_data.resolution.value
+        if resolution == "audio":
+            format_str = "bestaudio[ext=m4a]/bestaudio"
+        elif resolution == "best":
+            format_str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
         else:
-            logger.info("AgentGo not configured, proceeding without authentication")
+            format_str = f"bestvideo[height<={resolution}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={resolution}]+bestaudio/best[height<={resolution}]"
 
-        # Step 3: Extract URLs using authentication
-        result = await asyncio.wait_for(
-            extract_youtube_urls(
-                url=request_data.youtube_url,
-                resolution=request_data.resolution.value,
-                region=region,
-                auth_bundle=auth_bundle,
-                timeout=120,
-            ),
-            timeout=180,  # Overall timeout
-        )
+        # Build yt-dlp command
+        cmd = [
+            "yt-dlp",
+            "-f", format_str,
+            "--merge-output-format", "mp4",
+            "-o", f"{temp_dir}/%(id)s.%(ext)s",
+            "--print-json",  # Output video info as JSON
+            "--no-simulate",
+            request_data.youtube_url
+        ]
 
+        # Add proxy if configured
+        if settings.http_proxy:
+            cmd.insert(1, "--proxy")
+            cmd.insert(2, settings.http_proxy)
+            logger.info(f"[{task_id}] Using proxy: {settings.http_proxy}")
+
+        # Run yt-dlp in subprocess
+        loop = asyncio.get_running_loop()
+        
+        def run_ytdlp():
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minutes timeout
+            )
+            return result
+
+        result = await loop.run_in_executor(None, run_ytdlp)
+
+        if result.returncode != 0:
+            error_msg = result.stderr[-500:] if result.stderr else "Unknown error"
+            logger.error(f"[{task_id}] yt-dlp failed: {error_msg}")
+            raise Exception(f"Download failed: {error_msg}")
+
+        # Parse video info from JSON output
+        video_info = {}
+        try:
+            # yt-dlp outputs JSON on stdout
+            video_info = json.loads(result.stdout.strip().split('\n')[-1])
+        except json.JSONDecodeError:
+            logger.warning(f"[{task_id}] Could not parse video info JSON")
+
+        download_time = time.time() - download_start
+
+        # Find the downloaded file
+        video_path = None
+        for f in temp_dir.iterdir():
+            if f.suffix == '.mp4':
+                video_path = str(f)
+                break
+
+        if not video_path or not Path(video_path).exists():
+            raise Exception("Downloaded file not found")
+
+        file_size = Path(video_path).stat().st_size
+        logger.info(f"[{task_id}] Download completed in {download_time:.2f}s: {file_size / 1024 / 1024:.2f} MB")
+
+        # Step 2: Upload to OSS
+        upload_start = time.time()
+        logger.info(f"[{task_id}] Uploading to OSS...")
+
+        storage = get_storage()
+
+        # Sanitize filename for OSS
+        safe_title = "".join(
+            c for c in video_info.get("title", "video")[:50]
+            if c.isalnum() or c in (" ", "-", "_")
+        ).strip() or "video"
+
+        video_ext = Path(video_path).suffix.lstrip('.') or 'mp4'
+        object_key = f"downloads/{task_id}/{safe_title}.{video_ext}"
+        oss_video_url = await storage.upload_file(video_path, object_key)
+
+        upload_time = time.time() - upload_start
         extraction_time = time.time() - start_time
 
-        # Build response
-        video_info = ExtractedVideoInfo(
-            video_id=result["video_info"]["video_id"],
-            title=result["video_info"]["title"],
-            duration=result["video_info"]["duration"],
-            thumbnail=result["video_info"].get("thumbnail"),
-            description=result["video_info"].get("description"),
-            uploader=result["video_info"].get("uploader"),
-            uploader_id=result["video_info"].get("uploader_id"),
-            view_count=result["video_info"].get("view_count"),
-            like_count=result["video_info"].get("like_count"),
-            upload_date=result["video_info"].get("upload_date"),
-            format_count=result["video_info"]["format_count"],
+        logger.info(
+            f"[{task_id}] Upload completed in {upload_time:.2f}s. "
+            f"Total time: {extraction_time:.2f}s. URL: {oss_video_url}"
         )
 
-        # Build download URLs
-        urls = result["download_urls"]
-        video_format = None
-        audio_format = None
+        # Build response
+        extracted_video_info = ExtractedVideoInfo(
+            video_id=video_info.get("id", task_id),
+            title=video_info.get("title", "Unknown"),
+            duration=video_info.get("duration", 0),
+            thumbnail=video_info.get("thumbnail"),
+            description=video_info.get("description"),
+            uploader=video_info.get("uploader"),
+            uploader_id=video_info.get("uploader_id"),
+            view_count=video_info.get("view_count"),
+            like_count=video_info.get("like_count"),
+            upload_date=video_info.get("upload_date"),
+            format_count=len(video_info.get("formats", [])),
+        )
 
-        if urls.get("video_format"):
-            vf = urls["video_format"]
-            video_format = VideoFormatInfo(
-                format_id=vf["format_id"],
-                url=vf["url"],
-                ext=vf["ext"],
-                resolution=vf.get("resolution"),
-                height=vf.get("height"),
-                width=vf.get("width"),
-                fps=vf.get("fps"),
-                vcodec=vf.get("vcodec"),
-                acodec=vf.get("acodec"),
-                filesize=vf.get("filesize"),
-                tbr=vf.get("tbr"),
-                format_note=vf.get("format_note"),
-                is_video=vf.get("is_video", False),
-                is_audio=vf.get("is_audio", False),
-                is_video_only=vf.get("is_video_only", False),
-                is_audio_only=vf.get("is_audio_only", False),
-                has_both=vf.get("has_both", False),
-                protocol=vf.get("protocol"),
-                is_direct_download=vf.get("is_direct_download", False),
-            )
-
-        if urls.get("audio_format"):
-            af = urls["audio_format"]
-            audio_format = VideoFormatInfo(
-                format_id=af["format_id"],
-                url=af["url"],
-                ext=af["ext"],
-                resolution=af.get("resolution"),
-                height=af.get("height"),
-                width=af.get("width"),
-                fps=af.get("fps"),
-                vcodec=af.get("vcodec"),
-                acodec=af.get("acodec"),
-                filesize=af.get("filesize"),
-                tbr=af.get("tbr"),
-                format_note=af.get("format_note"),
-                is_video=af.get("is_video", False),
-                is_audio=af.get("is_audio", False),
-                is_video_only=af.get("is_video_only", False),
-                is_audio_only=af.get("is_audio_only", False),
-                has_both=af.get("has_both", False),
-                protocol=af.get("protocol"),
-                is_direct_download=af.get("is_direct_download", False),
-            )
+        # Build download URLs - pointing to OSS
+        video_format = VideoFormatInfo(
+            format_id="oss",
+            url=oss_video_url,
+            ext=video_ext,
+            resolution=f"{resolution}p" if resolution.isdigit() else resolution,
+            height=int(resolution) if resolution.isdigit() else None,
+            width=video_info.get("width"),
+            fps=video_info.get("fps"),
+            vcodec=video_info.get("vcodec", "merged"),
+            acodec=video_info.get("acodec", "merged"),
+            filesize=file_size,
+            tbr=video_info.get("tbr"),
+            format_note="Downloaded and uploaded to OSS",
+            is_video=True,
+            is_audio=True,
+            is_video_only=False,
+            is_audio_only=False,
+            has_both=True,
+            protocol="https",
+            is_direct_download=True,
+        )
 
         download_urls = DownloadURLs(
-            video_url=urls.get("video_url"),
-            audio_url=urls.get("audio_url"),
+            video_url=oss_video_url,
+            audio_url=None,
             video_format=video_format,
-            audio_format=audio_format,
-            needs_merge=urls.get("needs_merge", False),
-            resolution=urls.get("resolution", request_data.resolution.value),
+            audio_format=None,
+            needs_merge=False,
+            resolution=resolution,
         )
 
-        # Build all formats list
-        all_formats = []
-        for fmt in result.get("all_formats", []):
-            all_formats.append(
-                VideoFormatInfo(
-                    format_id=fmt["format_id"],
-                    url=fmt["url"],
-                    ext=fmt["ext"],
-                    resolution=fmt.get("resolution"),
-                    height=fmt.get("height"),
-                    width=fmt.get("width"),
-                    fps=fmt.get("fps"),
-                    vcodec=fmt.get("vcodec"),
-                    acodec=fmt.get("acodec"),
-                    filesize=fmt.get("filesize"),
-                    tbr=fmt.get("tbr"),
-                    format_note=fmt.get("format_note"),
-                    is_video=fmt.get("is_video", False),
-                    is_audio=fmt.get("is_audio", False),
-                    is_video_only=fmt.get("is_video_only", False),
-                    is_audio_only=fmt.get("is_audio_only", False),
-                    has_both=fmt.get("has_both", False),
-                    protocol=fmt.get("protocol"),
-                    is_direct_download=fmt.get("is_direct_download", False),
-                )
+        # Log usage to Supabase
+        if user_id and auth_service.is_configured():
+            await auth_service.log_usage(
+                user_id=user_id,
+                video_url=request_data.youtube_url,
+                video_title=video_info.get("title", "Unknown"),
+                resolution=resolution,
+                file_size=file_size,
+                oss_url=oss_video_url
             )
-
-        logger.info(
-            f"URL extraction successful in {extraction_time:.2f}s: {video_info.title}"
-        )
-
-        # Determine auth method used
-        auth_method = "none"
-        if auth_bundle:
-            if auth_bundle.po_token or auth_bundle.visitor_data:
-                auth_method = "agentgo_tokens"
-            elif auth_bundle.cookies:
-                auth_method = "agentgo_cookies"
 
         return ExtractURLResponse(
             success=True,
-            video_info=video_info,
+            video_info=extracted_video_info,
             download_urls=download_urls,
-            all_formats=all_formats,
+            all_formats=[video_format],
             extraction_time=extraction_time,
             client_ip=client_ip,
             detected_country=country_code,
             agentgo_region=region,
-            auth_method=auth_method,
+            auth_method="subprocess",
         )
 
-    except asyncio.TimeoutError:
-        logger.error(f"URL extraction timed out for: {request_data.youtube_url}")
+    except subprocess.TimeoutExpired:
+        logger.error(f"[{task_id}] Download timed out")
         return ExtractURLResponse(
             success=False,
-            error_message="Extraction timed out. Please try again.",
+            error_message="Download timed out. Please try again with a shorter video.",
             extraction_time=time.time() - start_time,
-            client_ip=client_ip if "client_ip" in dir() else None,
-            detected_country=country_code if "country_code" in dir() else None,
-            agentgo_region=region if "region" in dir() else None,
+            client_ip=client_ip,
+            detected_country=country_code,
+            agentgo_region=region,
         )
     except Exception as e:
-        logger.error(f"URL extraction failed: {e}")
+        logger.error(f"[{task_id}] Download failed: {e}")
         return ExtractURLResponse(
             success=False,
             error_message=str(e),
             extraction_time=time.time() - start_time,
-            client_ip=client_ip if "client_ip" in dir() else None,
-            detected_country=country_code if "country_code" in dir() else None,
-            agentgo_region=region if "region" in dir() else None,
+            client_ip=client_ip,
+            detected_country=country_code,
+            agentgo_region=region,
         )
+    finally:
+        # Cleanup temp files
+        try:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+                logger.info(f"[{task_id}] Cleaned up temp directory")
+        except Exception as e:
+            logger.warning(f"[{task_id}] Failed to cleanup: {e}")
 
 
 @router.get("/extract/formats")

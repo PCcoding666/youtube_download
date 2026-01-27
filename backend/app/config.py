@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # HTTP Proxy for YouTube access (used by yt-dlp)
     http_proxy: Optional[str] = None
 
+    # Supabase Configuration
+    supabase_url: str = ""
+    supabase_anon_key: str = ""
+    supabase_jwt_secret: str = ""
+
     # bgutil PO Token provider URL
     # In Docker: http://bgutil:4416 (container name)
     # Local: http://127.0.0.1:4416
