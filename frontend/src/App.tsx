@@ -8,17 +8,31 @@ import {
   Play,
   Clock,
   Link,
-  Volume2,
   Copy,
+  User,
+  LogOut,
+  CreditCard,
+  Zap,
 } from 'lucide-react';
 import {
   extractDirectURLs,
   healthCheck,
+  register,
+  login,
+  logout,
+  getCurrentUser,
+  getUserQuota,
+  createPaymentOrder,
+  completePayment,
+  getAuthToken,
+  checkAnonymousQuota,
 } from './api';
-import type { ExtractURLResponse, VideoResolution, VideoFormatInfo } from './api';
+import type { ExtractURLResponse, VideoResolution, VideoFormatInfo, UserInfo, RegisterRequest, LoginRequest } from './api';
 import './App.css';
 
 type AppState = 'idle' | 'extracting' | 'completed' | 'error';
+type AuthState = 'login' | 'register';
+type PageState = 'main' | 'payment' | 'auth';
 
 function App() {
   const [url, setUrl] = useState('');
@@ -29,19 +43,119 @@ function App() {
   const [isApiHealthy, setIsApiHealthy] = useState<boolean | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
+  // 认证状态
+  const [authState, setAuthState] = useState<AuthState>('login');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<UserInfo | null>(null);
+  const [userQuota, setUserQuota] = useState<any>(null);
+
+  // 匿名配额
+  const [anonymousQuota, setAnonymousQuota] = useState<any>(null);
+
+  // 页面状态
+  const [pageState, setPageState] = useState<PageState>('main');
+
+  // 表单状态
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    password: '',
+  });
+
   useEffect(() => {
     const checkHealth = async () => {
       const healthy = await healthCheck();
       setIsApiHealthy(healthy);
     };
     checkHealth();
+
+    // 检查是否已登录
+    const token = getAuthToken();
+    if (token) {
+      loadUserData();
+    } else {
+      // 加载匿名配额
+      loadAnonymousQuota();
+    }
   }, []);
+
+  const loadUserData = async () => {
+    try {
+      const user = await getCurrentUser();
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+
+      const quota = await getUserQuota();
+      setUserQuota(quota);
+    } catch (err) {
+      console.error('Failed to load user data:', err);
+      setIsAuthenticated(false);
+      // 登录失败，加载匿名配额
+      loadAnonymousQuota();
+    }
+  };
+
+  const loadAnonymousQuota = async () => {
+    try {
+      const quota = await checkAnonymousQuota();
+      setAnonymousQuota(quota);
+    } catch (err) {
+      console.error('Failed to load anonymous quota:', err);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const request: RegisterRequest = {
+        username: formData.username,
+        email: formData.email,
+        password: formData.password,
+      };
+      const response = await register(request);
+      if (response.success) {
+        await loadUserData();
+        setPageState('main');
+      } else {
+        setError(response.message);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || '注册失败');
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const request: LoginRequest = {
+        email: formData.email,
+        password: formData.password,
+      };
+      const response = await login(request);
+      if (response.success) {
+        await loadUserData();
+        setPageState('main');
+      } else {
+        setError(response.message);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || '登录失败');
+    }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setUserQuota(null);
+    loadAnonymousQuota();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!url.trim()) {
-      setError('Please enter a YouTube URL');
+      setError('请输入YouTube URL');
       return;
     }
 
@@ -58,13 +172,26 @@ function App() {
       if (response.success) {
         setResult(response);
         setAppState('completed');
+        // 刷新配额信息
+        if (isAuthenticated) {
+          await loadUserData();
+        } else {
+          await loadAnonymousQuota();
+        }
       } else {
-        setError(response.error_message || 'Failed to extract URLs');
+        setError(response.error_message || '提取失败');
         setAppState('error');
       }
     } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || err.message || 'Failed to extract URLs';
-      setError(errorMessage);
+      const errorMessage = err.response?.data?.detail || err.message || '提取失败';
+      
+      // 检查是否是配额用完的错误
+      if (err.response?.status === 402) {
+        setPageState(isAuthenticated ? 'payment' : 'auth');
+        setError(errorMessage);
+      } else {
+        setError(errorMessage);
+      }
       setAppState('error');
     }
   };
@@ -94,8 +221,6 @@ function App() {
   };
 
   const handleDownload = (url: string, filename: string) => {
-    // Direct download - open in new tab
-    // The browser will handle the download
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
@@ -106,7 +231,7 @@ function App() {
   };
 
   const formatFileSize = (bytes: number | null): string => {
-    if (!bytes) return 'Unknown size';
+    if (!bytes) return '未知大小';
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
@@ -121,41 +246,287 @@ function App() {
           {format.height ? `${format.height}p` : format.resolution || 'N/A'}
           {format.ext && ` • ${format.ext.toUpperCase()}`}
           {format.filesize && ` • ${formatFileSize(format.filesize)}`}
-          {format.vcodec && format.vcodec !== 'none' && ` • ${format.vcodec}`}
-          {format.acodec && format.acodec !== 'none' && ` • ${format.acodec}`}
         </span>
       </div>
     );
   };
 
+  const handlePayment = async (planType: 'monthly' | 'yearly') => {
+    if (!isAuthenticated) {
+      setError('请先注册登录');
+      return;
+    }
+
+    try {
+      const order = await createPaymentOrder(planType);
+      
+      // 模拟支付成功
+      const result = await completePayment(order.order_number);
+      
+      if (result.success) {
+        alert('支付成功！您已升级为高级用户');
+        await loadUserData();
+        setPageState('main');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || '支付失败');
+    }
+  };
+
+  // 渲染登录/注册页面
+  if (pageState === 'auth') {
+    return (
+      <div className="app auth-page">
+        <div className="auth-container">
+          <div className="auth-header">
+            <Youtube size={48} className="auth-logo" />
+            <h1>YouTube 下载器</h1>
+            <p className="auth-subtitle">免费额度已用完，注册后继续使用</p>
+          </div>
+
+          <div className="auth-tabs">
+            <button
+              className={`auth-tab ${authState === 'login' ? 'active' : ''}`}
+              onClick={() => {
+                setAuthState('login');
+                setError(null);
+              }}
+            >
+              登录
+            </button>
+            <button
+              className={`auth-tab ${authState === 'register' ? 'active' : ''}`}
+              onClick={() => {
+                setAuthState('register');
+                setError(null);
+              }}
+            >
+              注册
+            </button>
+          </div>
+
+          <form onSubmit={authState === 'login' ? handleLogin : handleRegister} className="auth-form">
+            {authState === 'register' && (
+              <div className="form-group">
+                <label htmlFor="username">用户名</label>
+                <input
+                  id="username"
+                  type="text"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  placeholder="请输入用户名"
+                  required
+                  minLength={3}
+                />
+              </div>
+            )}
+
+            <div className="form-group">
+              <label htmlFor="email">邮箱</label>
+              <input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="请输入邮箱"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="password">密码</label>
+              <input
+                id="password"
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                placeholder="请输入密码（至少6位）"
+                required
+                minLength={6}
+              />
+            </div>
+
+            {error && (
+              <div className="auth-error">
+                <AlertCircle size={16} />
+                {error}
+              </div>
+            )}
+
+            <button type="submit" className="auth-submit">
+              {authState === 'login' ? '登录' : '注册'}
+            </button>
+          </form>
+
+          {authState === 'register' && (
+            <div className="auth-info">
+              <CheckCircle2 size={16} />
+              <span>注册后可 <strong>无限次下载</strong></span>
+            </div>
+          )}
+
+          <button onClick={() => setPageState('main')} className="back-btn" style={{marginTop: '1rem'}}>
+            返回主页
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 渲染付费页面
+  if (pageState === 'payment') {
+    return (
+      <div className="app">
+        <header className="header">
+          <div className="logo">
+            <Youtube size={32} />
+            <h1>YouTube 下载器</h1>
+          </div>
+          <div className="user-info">
+            <User size={20} />
+            <span>{currentUser?.username}</span>
+            <button onClick={handleLogout} className="logout-btn">
+              <LogOut size={16} />
+            </button>
+          </div>
+        </header>
+
+        <main className="main payment-page">
+          <div className="payment-header">
+            <CreditCard size={48} />
+            <h2>升级到高级版</h2>
+            <p>升级后可无限次使用</p>
+          </div>
+
+          <div className="pricing-cards">
+            <div className="pricing-card">
+              <div className="plan-header">
+                <h3>月度会员</h3>
+                <div className="price">
+                  <span className="amount">¥9.99</span>
+                  <span className="period">/月</span>
+                </div>
+              </div>
+              <ul className="features">
+                <li><CheckCircle2 size={16} /> 无限次下载</li>
+                <li><CheckCircle2 size={16} /> 支持所有分辨率</li>
+                <li><CheckCircle2 size={16} /> 高速下载</li>
+                <li><CheckCircle2 size={16} /> 无广告</li>
+              </ul>
+              <button onClick={() => handlePayment('monthly')} className="plan-btn">
+                选择月度会员
+              </button>
+            </div>
+
+            <div className="pricing-card featured">
+              <div className="badge">最划算</div>
+              <div className="plan-header">
+                <h3>年度会员</h3>
+                <div className="price">
+                  <span className="amount">¥99.99</span>
+                  <span className="period">/年</span>
+                </div>
+                <div className="save-badge">节省 ¥20</div>
+              </div>
+              <ul className="features">
+                <li><Zap size={16} /> 无限次下载</li>
+                <li><Zap size={16} /> 支持所有分辨率</li>
+                <li><Zap size={16} /> 高速下载</li>
+                <li><Zap size={16} /> 无广告</li>
+                <li><Zap size={16} /> 优先支持</li>
+              </ul>
+              <button onClick={() => handlePayment('yearly')} className="plan-btn featured-btn">
+                选择年度会员
+              </button>
+            </div>
+          </div>
+
+          <button onClick={() => setPageState('main')} className="back-btn">
+            返回主页
+          </button>
+        </main>
+      </div>
+    );
+  }
+
+  // 渲染主页面
   return (
     <div className="app">
       <header className="header">
         <div className="logo">
           <Youtube size={32} />
-          <h1>YouTube Direct Link</h1>
+          <h1>YouTube 下载器</h1>
         </div>
-        <div className="api-status">
-          {isApiHealthy === null ? (
-            <span className="status-checking">Checking API...</span>
-          ) : isApiHealthy ? (
-            <span className="status-healthy">
-              <CheckCircle2 size={16} /> API Connected
-            </span>
+        <div className="header-right">
+          {isAuthenticated ? (
+            <>
+              {userQuota && currentUser?.is_premium && (
+                <div className="quota-info">
+                  <span className="premium-badge">
+                    <Zap size={16} />
+                    高级会员
+                  </span>
+                </div>
+              )}
+              <div className="user-info">
+                <User size={20} />
+                <span>{currentUser?.username}</span>
+                <button onClick={handleLogout} className="logout-btn">
+                  <LogOut size={16} />
+                </button>
+              </div>
+            </>
           ) : (
-            <span className="status-unhealthy">
-              <AlertCircle size={16} /> API Offline
-            </span>
+            <>
+              {anonymousQuota && (
+                <div className="quota-info">
+                  <span className="quota-badge">
+                    免费剩余: {anonymousQuota.remaining}/3
+                  </span>
+                </div>
+              )}
+              <button 
+                onClick={() => setPageState('auth')} 
+                className="login-btn"
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: 'var(--primary-color)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}
+              >
+                <User size={16} />
+                登录/注册
+              </button>
+            </>
           )}
+          <div className="api-status">
+            {isApiHealthy === null ? (
+              <span className="status-checking">检查API...</span>
+            ) : isApiHealthy ? (
+              <span className="status-healthy">
+                <CheckCircle2 size={16} /> API已连接
+              </span>
+            ) : (
+              <span className="status-unhealthy">
+                <AlertCircle size={16} /> API离线
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
       <main className="main">
         {appState === 'idle' && (
           <div className="input-section">
-            <h2>Get YouTube Direct Download Links</h2>
+            <h2>获取YouTube直接下载链接</h2>
             <p className="subtitle">
-              Enter a YouTube URL to get direct download links. No server download - links go directly to YouTube.
+              {isAuthenticated ? '注册用户无限次使用' : `免费用户可使用 ${anonymousQuota?.remaining || 3} 次，注册后无限制`}
             </p>
 
             <form onSubmit={handleSubmit} className="url-form">
@@ -173,7 +544,7 @@ function App() {
 
               <div className="options">
                 <div className="resolution-select">
-                  <label htmlFor="resolution">Resolution:</label>
+                  <label htmlFor="resolution">分辨率:</label>
                   <select
                     id="resolution"
                     value={resolution}
@@ -182,12 +553,12 @@ function App() {
                   >
                     <option value="360">360p</option>
                     <option value="480">480p</option>
-                    <option value="720">720p (Recommended)</option>
-                    <option value="1080">1080p Full HD</option>
+                    <option value="720">720p (推荐)</option>
+                    <option value="1080">1080p 全高清</option>
                     <option value="1440">1440p 2K</option>
                     <option value="2160">2160p 4K</option>
-                    <option value="best">Best Available</option>
-                    <option value="audio">Audio Only</option>
+                    <option value="best">最佳质量</option>
+                    <option value="audio">仅音频</option>
                   </select>
                 </div>
               </div>
@@ -198,7 +569,7 @@ function App() {
                 disabled={!isApiHealthy || !url.trim()}
               >
                 <Download size={20} />
-                Get Download Links
+                获取下载链接
               </button>
             </form>
 
@@ -216,8 +587,8 @@ function App() {
             <div className="processing-icon">
               <Loader2 size={48} className="spinning" />
             </div>
-            <h2>Extracting download links...</h2>
-            <p className="progress-text">This may take a few seconds</p>
+            <h2>正在提取下载链接...</h2>
+            <p className="progress-text">这可能需要几秒钟</p>
           </div>
         )}
 
@@ -225,7 +596,7 @@ function App() {
           <div className="result-section">
             <div className="success-header">
               <CheckCircle2 size={48} className="success-icon" />
-              <h2>Links Ready!</h2>
+              <h2>链接准备就绪！</h2>
             </div>
 
             <div className="video-info">
@@ -243,33 +614,20 @@ function App() {
                   {formatDuration(result.video_info.duration)}
                 </span>
                 {result.video_info.uploader && (
-                  <span>by {result.video_info.uploader}</span>
+                  <span>作者: {result.video_info.uploader}</span>
                 )}
-                <span>{result.video_info.format_count} formats available</span>
               </div>
             </div>
 
             <div className="download-links">
-              <h4>Recommended Downloads</h4>
-              <div className="download-notice" style={{
-                padding: '10px',
-                marginBottom: '15px',
-                backgroundColor: '#fff3cd',
-                borderLeft: '3px solid #ffc107',
-                borderRadius: '4px',
-                fontSize: '14px',
-                color: '#856404'
-              }}>
-                ⚠️ <strong>Note:</strong> Direct download links are IP-restricted by YouTube. 
-                If you get a 403 error, the link can only be accessed from the server that extracted it.
-              </div>
+              <h4>推荐下载</h4>
               
               {result.download_urls.video_url && (
                 <div className="link-item">
                   <div className="link-header">
                     <Play size={20} />
-                    <span>Video</span>
-                    {renderFormatInfo(result.download_urls.video_format, 'Format')}
+                    <span>视频</span>
+                    {renderFormatInfo(result.download_urls.video_format, '格式')}
                   </div>
                   <div className="link-actions">
                     <button
@@ -284,242 +642,28 @@ function App() {
                       className="download-btn video-btn"
                     >
                       <Download size={16} />
-                      Download
+                      下载
                     </button>
                     <button
                       onClick={() => copyToClipboard(result.download_urls!.video_url!, 'video')}
                       className="copy-btn"
                     >
                       <Copy size={16} />
-                      {copiedUrl === 'video' ? 'Copied!' : 'Copy URL'}
+                      {copiedUrl === 'video' ? '已复制!' : '复制链接'}
                     </button>
                   </div>
-                </div>
-              )}
-
-              {result.download_urls.audio_url && (
-                <div className="link-item">
-                  <div className="link-header">
-                    <Volume2 size={20} />
-                    <span>Audio</span>
-                    {renderFormatInfo(result.download_urls.audio_format, 'Format')}
-                  </div>
-                  <div className="link-actions">
-                    <button
-                      onClick={() => {
-                        if (result.download_urls?.audio_url && result.video_info?.title) {
-                          handleDownload(
-                            result.download_urls.audio_url,
-                            `${result.video_info.title}.${result.download_urls.audio_format?.ext || 'webm'}`
-                          );
-                        }
-                      }}
-                      className="download-btn audio-btn"
-                    >
-                      <Download size={16} />
-                      Download
-                    </button>
-                    <button
-                      onClick={() => copyToClipboard(result.download_urls!.audio_url!, 'audio')}
-                      className="copy-btn"
-                    >
-                      <Copy size={16} />
-                      {copiedUrl === 'audio' ? 'Copied!' : 'Copy URL'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {result.download_urls.needs_merge && (
-                <div className="merge-notice">
-                  <AlertCircle size={16} />
-                  Note: Video and audio are separate. Use a tool like FFmpeg to merge them.
                 </div>
               )}
             </div>
 
-            {/* All Available Formats Section */}
-            {result.all_formats && result.all_formats.length > 0 && (
-              <div className="all-formats-section" style={{ marginTop: '30px' }}>
-                <h4 style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Link size={20} />
-                  All Available Formats ({result.all_formats.length})
-                </h4>
-                
-                {/* Video Formats */}
-                <div className="format-group" style={{ marginBottom: '20px' }}>
-                  <h5 style={{ 
-                    color: '#4CAF50', 
-                    marginBottom: '10px',
-                    fontSize: '14px',
-                    fontWeight: '600'
-                  }}>
-                    🎬 Video Formats
-                  </h5>
-                  <div className="formats-table" style={{
-                    backgroundColor: '#f8f9fa',
-                    borderRadius: '8px',
-                    overflow: 'hidden'
-                  }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#e9ecef' }}>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Quality</th>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Format</th>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Codec</th>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Size</th>
-                          <th style={{ padding: '10px', textAlign: 'center' }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.all_formats
-                          .filter(f => f.is_video && f.url)
-                          .sort((a, b) => (b.height || 0) - (a.height || 0))
-                          .map((format, idx) => (
-                            <tr key={`video-${idx}`} style={{ 
-                              borderBottom: '1px solid #dee2e6',
-                              backgroundColor: format.has_both ? '#e8f5e9' : 'transparent'
-                            }}>
-                              <td style={{ padding: '10px' }}>
-                                <strong>{format.height ? `${format.height}p` : format.resolution || 'N/A'}</strong>
-                                {format.fps && <span style={{ color: '#666', marginLeft: '4px' }}>@{Math.round(format.fps)}fps</span>}
-                                {format.has_both && <span style={{ 
-                                  marginLeft: '8px', 
-                                  backgroundColor: '#4CAF50', 
-                                  color: 'white', 
-                                  padding: '2px 6px', 
-                                  borderRadius: '4px',
-                                  fontSize: '11px'
-                                }}>+Audio</span>}
-                              </td>
-                              <td style={{ padding: '10px' }}>
-                                <span style={{ 
-                                  backgroundColor: format.ext === 'mp4' ? '#2196F3' : '#9C27B0',
-                                  color: 'white',
-                                  padding: '2px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '12px'
-                                }}>
-                                  {format.ext?.toUpperCase() || 'N/A'}
-                                </span>
-                              </td>
-                              <td style={{ padding: '10px', color: '#666', fontSize: '12px' }}>
-                                {format.vcodec && format.vcodec !== 'none' ? format.vcodec.split('.')[0] : '-'}
-                              </td>
-                              <td style={{ padding: '10px', color: '#666' }}>
-                                {formatFileSize(format.filesize)}
-                              </td>
-                              <td style={{ padding: '10px', textAlign: 'center' }}>
-                                <button
-                                  onClick={() => copyToClipboard(format.url, `format-${format.format_id}`)}
-                                  style={{
-                                    padding: '4px 12px',
-                                    fontSize: '12px',
-                                    backgroundColor: copiedUrl === `format-${format.format_id}` ? '#4CAF50' : '#6c757d',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer'
-                                  }}
-                                >
-                                  {copiedUrl === `format-${format.format_id}` ? '✓ Copied' : 'Copy URL'}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Audio Formats */}
-                <div className="format-group">
-                  <h5 style={{ 
-                    color: '#FF9800', 
-                    marginBottom: '10px',
-                    fontSize: '14px',
-                    fontWeight: '600'
-                  }}>
-                    🎵 Audio Formats
-                  </h5>
-                  <div className="formats-table" style={{
-                    backgroundColor: '#f8f9fa',
-                    borderRadius: '8px',
-                    overflow: 'hidden'
-                  }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#e9ecef' }}>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Quality</th>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Format</th>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Codec</th>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Bitrate</th>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Size</th>
-                          <th style={{ padding: '10px', textAlign: 'center' }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.all_formats
-                          .filter(f => f.is_audio_only && f.url)
-                          .sort((a, b) => (b.tbr || 0) - (a.tbr || 0))
-                          .map((format, idx) => (
-                            <tr key={`audio-${idx}`} style={{ borderBottom: '1px solid #dee2e6' }}>
-                              <td style={{ padding: '10px' }}>
-                                <strong>{format.format_note || 'Audio'}</strong>
-                              </td>
-                              <td style={{ padding: '10px' }}>
-                                <span style={{ 
-                                  backgroundColor: format.ext === 'm4a' ? '#FF9800' : '#607D8B',
-                                  color: 'white',
-                                  padding: '2px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '12px'
-                                }}>
-                                  {format.ext?.toUpperCase() || 'N/A'}
-                                </span>
-                              </td>
-                              <td style={{ padding: '10px', color: '#666', fontSize: '12px' }}>
-                                {format.acodec && format.acodec !== 'none' ? format.acodec.split('.')[0] : '-'}
-                              </td>
-                              <td style={{ padding: '10px', color: '#666' }}>
-                                {format.tbr ? `${Math.round(format.tbr)} kbps` : '-'}
-                              </td>
-                              <td style={{ padding: '10px', color: '#666' }}>
-                                {formatFileSize(format.filesize)}
-                              </td>
-                              <td style={{ padding: '10px', textAlign: 'center' }}>
-                                <button
-                                  onClick={() => copyToClipboard(format.url, `format-${format.format_id}`)}
-                                  style={{
-                                    padding: '4px 12px',
-                                    fontSize: '12px',
-                                    backgroundColor: copiedUrl === `format-${format.format_id}` ? '#4CAF50' : '#6c757d',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer'
-                                  }}
-                                >
-                                  {copiedUrl === `format-${format.format_id}` ? '✓ Copied' : 'Copy URL'}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {result.extraction_time && (
               <p className="extraction-time">
-                Extracted in {result.extraction_time.toFixed(2)}s
+                提取用时 {result.extraction_time.toFixed(2)}秒
               </p>
             )}
 
             <button onClick={handleReset} className="reset-btn">
-              Extract Another Video
+              下载另一个视频
             </button>
           </div>
         )}
@@ -527,17 +671,17 @@ function App() {
         {appState === 'error' && (
           <div className="error-section">
             <AlertCircle size={48} className="error-icon" />
-            <h2>Extraction Failed</h2>
+            <h2>提取失败</h2>
             <p className="error-detail">{error}</p>
             <button onClick={handleReset} className="reset-btn">
-              Try Again
+              重试
             </button>
           </div>
         )}
       </main>
 
       <footer className="footer">
-        <p>YouTube Direct Link Extractor &copy; 2024</p>
+        <p>YouTube 下载器 &copy; 2024 | 免费3次，注册无限制</p>
       </footer>
     </div>
   );

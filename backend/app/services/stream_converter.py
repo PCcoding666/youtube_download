@@ -264,12 +264,20 @@ class StreamConverter:
 
         cmd.append(output_file)
 
-        # Set up environment with proxy if configured
+        # SMART FALLBACK: Try direct download first, fallback to proxy if blocked
+        # Since we extracted URLs with server DC IP, download URLs are bound to server IP
+        # Server can download directly without proxy (saves bandwidth cost)
+        # But if server IP is blocked, we'll retry with proxy
+        
+        from app.config import settings
+        
+        # First attempt: Direct download (no proxy)
         env = os.environ.copy()
-        if settings.http_proxy:
-            env["http_proxy"] = settings.http_proxy
-            env["https_proxy"] = settings.http_proxy
-            logger.info(f"FFmpeg merge using proxy: {settings.http_proxy}")
+        env.pop("http_proxy", None)
+        env.pop("https_proxy", None)
+        env.pop("HTTP_PROXY", None)
+        env.pop("HTTPS_PROXY", None)
+        logger.info("FFmpeg merge: attempting direct download (no proxy)")
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -285,8 +293,22 @@ class StreamConverter:
 
             if process.returncode != 0:
                 error_msg = stderr.decode() if stderr else "Unknown error"
-                logger.error(f"FFmpeg merge failed: {error_msg}")
-                raise ConversionError(f"FFmpeg error: {error_msg[:500]}")
+                
+                # Check if error indicates blocking (403, forbidden, etc.)
+                is_blocked = (
+                    "403" in error_msg or 
+                    "forbidden" in error_msg.lower() or
+                    "HTTP error 403" in error_msg or
+                    "access denied" in error_msg.lower()
+                )
+                
+                if is_blocked:
+                    logger.warning(f"Direct download blocked: {error_msg[:200]}")
+                    logger.info("Retrying download with proxy fallback...")
+                    raise ConversionError("BLOCKED_RETRY_WITH_PROXY")  # Special error for fallback
+                else:
+                    logger.error(f"FFmpeg merge failed: {error_msg}")
+                    raise ConversionError(f"FFmpeg error: {error_msg[:500]}")
 
             if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
                 if os.path.exists(output_file):
@@ -301,8 +323,65 @@ class StreamConverter:
 
             return output_file
 
+        except ConversionError as e:
+            # If blocked, retry with proxy
+            if "BLOCKED_RETRY_WITH_PROXY" in str(e):
+                proxy = settings.effective_http_proxy
+                if proxy:
+                    logger.info(f"Retrying download with proxy: {proxy[:50]}...")
+                    env_proxy = os.environ.copy()
+                    env_proxy["http_proxy"] = proxy
+                    env_proxy["https_proxy"] = proxy
+                    env_proxy["HTTP_PROXY"] = proxy
+                    env_proxy["HTTPS_PROXY"] = proxy
+                    
+                    try:
+                        process = await asyncio.create_subprocess_exec(
+                            *cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            env=env_proxy,
+                        )
+
+                        stdout, stderr = await asyncio.wait_for(
+                            process.communicate(), timeout=timeout
+                        )
+
+                        if process.returncode != 0:
+                            error_msg = stderr.decode() if stderr else "Unknown error"
+                            logger.error(f"FFmpeg merge failed even with proxy: {error_msg[:200]}")
+                            if os.path.exists(output_file):
+                                os.remove(output_file)
+                            raise ConversionError(f"FFmpeg error (proxy): {error_msg[:500]}")
+
+                        if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
+                            if os.path.exists(output_file):
+                                os.remove(output_file)
+                            raise ConversionError("Output file is empty or not created")
+
+                        duration = time.time() - start_time
+                        file_size = os.path.getsize(output_file)
+                        logger.info(
+                            f"Merge completed with proxy fallback in {duration:.2f}s, file size: {file_size / 1024 / 1024:.2f}MB"
+                        )
+                        return output_file
+                    except Exception as proxy_error:
+                        if os.path.exists(output_file):
+                            os.remove(output_file)
+                        raise ConversionError(f"Proxy fallback failed: {str(proxy_error)}")
+                else:
+                    logger.error("Direct download blocked but no proxy configured")
+                    if os.path.exists(output_file):
+                        os.remove(output_file)
+                    raise ConversionError("Download blocked and no proxy available for fallback")
+            else:
+                # Other ConversionError, re-raise
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+                raise
+
         except asyncio.TimeoutError:
-            if process:
+            if 'process' in locals() and process:
                 process.kill()
                 await process.wait()
             if os.path.exists(output_file):

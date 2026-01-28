@@ -443,10 +443,23 @@ class YouTubeURLExtractor:
             "ignore_no_formats_error": True,
         }
 
-        # Add proxy if configured
-        if settings.http_proxy:
-            opts["proxy"] = settings.http_proxy
-            logger.info(f"Using proxy: {settings.http_proxy}")
+        # SMART FALLBACK: Try direct first (saves proxy bandwidth), fallback to proxy if blocked
+        # AgentGo provides Cookies/Visitor Data (residential IP for auth)
+        # Strategy: Try server DC IP first, if blocked (403/429), use proxy
+        # 
+        # Flow: AgentGo (residential) -> Cookies -> Server DC IP + Cookies -> YouTube API
+        # If blocked: Server DC IP -> Datasea Proxy -> YouTube API
+        #
+        # Note: use_proxy parameter controls whether to use proxy (for fallback retry)
+        use_proxy = getattr(self, '_use_proxy_fallback', False)
+        if use_proxy:
+            proxy = settings.effective_http_proxy
+            if proxy:
+                opts["proxy"] = proxy
+                logger.info(f"Using proxy (fallback mode): {proxy[:50]}...")
+        else:
+            # Direct connection - no proxy (saves bandwidth)
+            logger.debug("Extracting URLs with direct connection (no proxy)")
 
         # Add cookies if available (from AgentGo)
         if self._cookie_file and Path(self._cookie_file).exists():
@@ -496,10 +509,13 @@ class YouTubeURLExtractor:
         start_time = time.time()
         errors = []
 
-        # Try strategies: web (with bgutil PO Token), iOS, tv_embedded
+        # SMART FALLBACK: Try direct first, then proxy if blocked
+        # First attempt: Direct connection (no proxy) - saves bandwidth
+        self._use_proxy_fallback = False
+        
         for strategy in [1, 2, 3]:
             try:
-                logger.info(f"Trying extraction strategy {strategy} for {url[:50]}...")
+                logger.info(f"Trying extraction strategy {strategy} (direct, no proxy) for {url[:50]}...")
 
                 opts = self._build_opts(strategy)
                 loop = asyncio.get_event_loop()
@@ -513,15 +529,62 @@ class YouTubeURLExtractor:
                 if info:
                     duration = time.time() - start_time
                     logger.info(
-                        f"Extraction succeeded with strategy {strategy} in {duration:.2f}s"
+                        f"Extraction succeeded with strategy {strategy} (direct) in {duration:.2f}s"
                     )
                     return ExtractedVideo(info)
 
             except Exception as e:
                 error_msg = str(e)
-                errors.append(f"Strategy {strategy}: {error_msg}")
-                logger.warning(f"Strategy {strategy} failed: {error_msg}")
-                continue
+                errors.append(f"Strategy {strategy} (direct): {error_msg}")
+                
+                # Check if error indicates IP blocking (403, 429, or "blocked" keywords)
+                is_blocked = (
+                    "403" in error_msg or 
+                    "429" in error_msg or 
+                    "blocked" in error_msg.lower() or
+                    "forbidden" in error_msg.lower() or
+                    "sign in to confirm" in error_msg.lower()
+                )
+                
+                if is_blocked:
+                    logger.warning(f"Strategy {strategy} failed with blocking error: {error_msg[:100]}")
+                    logger.info("Server IP may be blocked, will retry with proxy...")
+                    break  # Exit loop to try proxy fallback
+                else:
+                    logger.warning(f"Strategy {strategy} failed: {error_msg[:100]}")
+                    continue
+        
+        # FALLBACK: If direct connection failed due to blocking, try with proxy
+        proxy = settings.effective_http_proxy
+        if proxy and not self._use_proxy_fallback:
+            logger.warning("Direct extraction failed, retrying with proxy fallback...")
+            self._use_proxy_fallback = True
+            
+            for strategy in [1, 2, 3]:
+                try:
+                    logger.info(f"Trying extraction strategy {strategy} (with proxy) for {url[:50]}...")
+
+                    opts = self._build_opts(strategy)
+                    loop = asyncio.get_event_loop()
+
+                    def do_extract():
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            return ydl.extract_info(url, download=False)
+
+                    info = await loop.run_in_executor(None, do_extract)
+
+                    if info:
+                        duration = time.time() - start_time
+                        logger.info(
+                            f"Extraction succeeded with strategy {strategy} (proxy fallback) in {duration:.2f}s"
+                        )
+                        return ExtractedVideo(info)
+
+                except Exception as e:
+                    error_msg = str(e)
+                    errors.append(f"Strategy {strategy} (proxy): {error_msg}")
+                    logger.warning(f"Strategy {strategy} (proxy) failed: {error_msg[:100]}")
+                    continue
 
         # Try AgentGo fallback
         try:
@@ -633,7 +696,7 @@ async def extract_youtube_urls(
     # Pre-fetch auth if region specified
     if region and not auth_bundle:
         try:
-            await asyncio.wait_for(extractor.prefetch_authentication(), timeout=30)
+            await asyncio.wait_for(extractor.prefetch_authentication(), timeout=90)
         except asyncio.TimeoutError:
             logger.warning("Authentication prefetch timed out")
         except Exception as e:

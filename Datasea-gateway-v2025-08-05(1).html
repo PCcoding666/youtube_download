@@ -1,0 +1,213 @@
+<!DOCTYPE html><html><head>
+      <title>Pangolin-wrapper-v2025-07-21</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      
+      <link rel="stylesheet" href="file:////home/giggs/.vscode/extensions/shd101wyy.markdown-preview-enhanced-0.8.18/crossnote/dependencies/katex/katex.min.css">
+      
+      
+      
+      
+      
+      <style>
+      code[class*=language-],pre[class*=language-]{color:#333;background:0 0;font-family:Consolas,"Liberation Mono",Menlo,Courier,monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.4;-moz-tab-size:8;-o-tab-size:8;tab-size:8;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}pre[class*=language-]{padding:.8em;overflow:auto;border-radius:3px;background:#f5f5f5}:not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal;background:#f5f5f5}.token.blockquote,.token.comment{color:#969896}.token.cdata{color:#183691}.token.doctype,.token.macro.property,.token.punctuation,.token.variable{color:#333}.token.builtin,.token.important,.token.keyword,.token.operator,.token.rule{color:#a71d5d}.token.attr-value,.token.regex,.token.string,.token.url{color:#183691}.token.atrule,.token.boolean,.token.code,.token.command,.token.constant,.token.entity,.token.number,.token.property,.token.symbol{color:#0086b3}.token.prolog,.token.selector,.token.tag{color:#63a35c}.token.attr-name,.token.class,.token.class-name,.token.function,.token.id,.token.namespace,.token.pseudo-class,.token.pseudo-element,.token.url-reference .token.variable{color:#795da3}.token.entity{cursor:help}.token.title,.token.title .token.punctuation{font-weight:700;color:#1d3e81}.token.list{color:#ed6a43}.token.inserted{background-color:#eaffea;color:#55a532}.token.deleted{background-color:#ffecec;color:#bd2c00}.token.bold{font-weight:700}.token.italic{font-style:italic}.language-json .token.property{color:#183691}.language-markup .token.tag .token.punctuation{color:#333}.language-css .token.function,code.language-css{color:#0086b3}.language-yaml .token.atrule{color:#63a35c}code.language-yaml{color:#183691}.language-ruby .token.function{color:#333}.language-markdown .token.url{color:#795da3}.language-makefile .token.symbol{color:#795da3}.language-makefile .token.variable{color:#183691}.language-makefile .token.builtin{color:#0086b3}.language-bash .token.keyword{color:#0086b3}pre[data-line]{position:relative;padding:1em 0 1em 3em}pre[data-line] .line-highlight-wrapper{position:absolute;top:0;left:0;background-color:transparent;display:block;width:100%}pre[data-line] .line-highlight{position:absolute;left:0;right:0;padding:inherit 0;margin-top:1em;background:hsla(24,20%,50%,.08);background:linear-gradient(to right,hsla(24,20%,50%,.1) 70%,hsla(24,20%,50%,0));pointer-events:none;line-height:inherit;white-space:pre}pre[data-line] .line-highlight:before,pre[data-line] .line-highlight[data-end]:after{content:attr(data-start);position:absolute;top:.4em;left:.6em;min-width:1em;padding:0 .5em;background-color:hsla(24,20%,50%,.4);color:#f4f1ef;font:bold 65%/1.5 sans-serif;text-align:center;vertical-align:.3em;border-radius:999px;text-shadow:none;box-shadow:0 1px #fff}pre[data-line] .line-highlight[data-end]:after{content:attr(data-end);top:auto;bottom:.4em}html body{font-family:'Helvetica Neue',Helvetica,'Segoe UI',Arial,freesans,sans-serif;font-size:16px;line-height:1.6;color:#333;background-color:#fff;overflow:initial;box-sizing:border-box;word-wrap:break-word}html body>:first-child{margin-top:0}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{line-height:1.2;margin-top:1em;margin-bottom:16px;color:#000}html body h1{font-size:2.25em;font-weight:300;padding-bottom:.3em}html body h2{font-size:1.75em;font-weight:400;padding-bottom:.3em}html body h3{font-size:1.5em;font-weight:500}html body h4{font-size:1.25em;font-weight:600}html body h5{font-size:1.1em;font-weight:600}html body h6{font-size:1em;font-weight:600}html body h1,html body h2,html body h3,html body h4,html body h5{font-weight:600}html body h5{font-size:1em}html body h6{color:#5c5c5c}html body strong{color:#000}html body del{color:#5c5c5c}html body a:not([href]){color:inherit;text-decoration:none}html body a{color:#08c;text-decoration:none}html body a:hover{color:#00a3f5;text-decoration:none}html body img{max-width:100%}html body>p{margin-top:0;margin-bottom:16px;word-wrap:break-word}html body>ol,html body>ul{margin-bottom:16px}html body ol,html body ul{padding-left:2em}html body ol.no-list,html body ul.no-list{padding:0;list-style-type:none}html body ol ol,html body ol ul,html body ul ol,html body ul ul{margin-top:0;margin-bottom:0}html body li{margin-bottom:0}html body li.task-list-item{list-style:none}html body li>p{margin-top:0;margin-bottom:0}html body .task-list-item-checkbox{margin:0 .2em .25em -1.8em;vertical-align:middle}html body .task-list-item-checkbox:hover{cursor:pointer}html body blockquote{margin:16px 0;font-size:inherit;padding:0 15px;color:#5c5c5c;background-color:#f0f0f0;border-left:4px solid #d6d6d6}html body blockquote>:first-child{margin-top:0}html body blockquote>:last-child{margin-bottom:0}html body hr{height:4px;margin:32px 0;background-color:#d6d6d6;border:0 none}html body table{margin:10px 0 15px 0;border-collapse:collapse;border-spacing:0;display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all}html body table th{font-weight:700;color:#000}html body table td,html body table th{border:1px solid #d6d6d6;padding:6px 13px}html body dl{padding:0}html body dl dt{padding:0;margin-top:16px;font-size:1em;font-style:italic;font-weight:700}html body dl dd{padding:0 16px;margin-bottom:16px}html body code{font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:.85em;color:#000;background-color:#f0f0f0;border-radius:3px;padding:.2em 0}html body code::after,html body code::before{letter-spacing:-.2em;content:'\00a0'}html body pre>code{padding:0;margin:0;word-break:normal;white-space:pre;background:0 0;border:0}html body .highlight{margin-bottom:16px}html body .highlight pre,html body pre{padding:1em;overflow:auto;line-height:1.45;border:#d6d6d6;border-radius:3px}html body .highlight pre{margin-bottom:0;word-break:normal}html body pre code,html body pre tt{display:inline;max-width:initial;padding:0;margin:0;overflow:initial;line-height:inherit;word-wrap:normal;background-color:transparent;border:0}html body pre code:after,html body pre code:before,html body pre tt:after,html body pre tt:before{content:normal}html body blockquote,html body dl,html body ol,html body p,html body pre,html body ul{margin-top:0;margin-bottom:16px}html body kbd{color:#000;border:1px solid #d6d6d6;border-bottom:2px solid #c7c7c7;padding:2px 4px;background-color:#f0f0f0;border-radius:3px}@media print{html body{background-color:#fff}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{color:#000;page-break-after:avoid}html body blockquote{color:#5c5c5c}html body pre{page-break-inside:avoid}html body table{display:table}html body img{display:block;max-width:100%;max-height:100%}html body code,html body pre{word-wrap:break-word;white-space:pre}}.markdown-preview{width:100%;height:100%;box-sizing:border-box}.markdown-preview ul{list-style:disc}.markdown-preview ul ul{list-style:circle}.markdown-preview ul ul ul{list-style:square}.markdown-preview ol{list-style:decimal}.markdown-preview ol ol,.markdown-preview ul ol{list-style-type:lower-roman}.markdown-preview ol ol ol,.markdown-preview ol ul ol,.markdown-preview ul ol ol,.markdown-preview ul ul ol{list-style-type:lower-alpha}.markdown-preview .newpage,.markdown-preview .pagebreak{page-break-before:always}.markdown-preview pre.line-numbers{position:relative;padding-left:3.8em;counter-reset:linenumber}.markdown-preview pre.line-numbers>code{position:relative}.markdown-preview pre.line-numbers .line-numbers-rows{position:absolute;pointer-events:none;top:1em;font-size:100%;left:0;width:3em;letter-spacing:-1px;border-right:1px solid #999;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}.markdown-preview pre.line-numbers .line-numbers-rows>span{pointer-events:none;display:block;counter-increment:linenumber}.markdown-preview pre.line-numbers .line-numbers-rows>span:before{content:counter(linenumber);color:#999;display:block;padding-right:.8em;text-align:right}.markdown-preview .mathjax-exps .MathJax_Display{text-align:center!important}.markdown-preview:not([data-for=preview]) .code-chunk .code-chunk-btn-group{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .status{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .output-div{margin-bottom:16px}.markdown-preview .md-toc{padding:0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link div,.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}.markdown-preview .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}.scrollbar-style::-webkit-scrollbar{width:8px}.scrollbar-style::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}.scrollbar-style::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode]){position:relative;width:100%;height:100%;top:0;left:0;margin:0;padding:0;overflow:auto}html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{position:relative;top:0;min-height:100vh}@media screen and (min-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em calc(50% - 457px + 2em)}}@media screen and (max-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{font-size:14px!important;padding:1em}}@media print{html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{display:none}}html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{position:fixed;bottom:8px;left:8px;font-size:28px;cursor:pointer;color:inherit;z-index:99;width:32px;text-align:center;opacity:.4}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] #sidebar-toc-btn{opacity:1}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc{position:fixed;top:0;left:0;width:300px;height:100%;padding:32px 0 48px 0;font-size:14px;box-shadow:0 0 4px rgba(150,150,150,.33);box-sizing:border-box;overflow:auto;background-color:inherit}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar{width:8px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc a{text-decoration:none}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc{padding:0 16px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link div,html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{left:300px;width:calc(100% - 300px);padding:2em calc(50% - 457px - 300px / 2);margin:0;box-sizing:border-box}@media screen and (max-width:1274px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{width:100%}}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .markdown-preview{left:50%;transform:translateX(-50%)}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .md-sidebar-toc{display:none}
+/* Please visit the URL below for more information: */
+/*   https://shd101wyy.github.io/markdown-preview-enhanced/#/customize-css */
+
+      </style>
+      <!-- The content below will be included at the end of the <head> element. --><script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", function () {
+    // your code here
+  });
+</script></head><body for="html-export">
+    
+    
+      <div class="crossnote markdown-preview  ">
+      
+<h1 id="datasea-gateway-使用手册"><em><strong>Datasea Gateway 使用手册</strong></em> </h1>
+<p>欢迎使用 Datasea 产品与解决方案!</p>
+<p>我们致力于提供卓越的动态数据传输方案和先进的技术平台,以满足您日益增长的需求.</p>
+<p>为了帮助您顺利使用 Datasea Gateway,充分发挥其强大性能,请您仔细阅读本手册.让我们一起开始吧!</p>
+<h2 id="gateway-调用须知">Gateway 调用须知 </h2>
+<p>在使用 Datasea Gateway 之前,请注意以下事项:</p>
+<ol>
+<li>试用申请: 请先向我司申请专属的 user 和 password.</li>
+<li>认证方式: 所有 HTTP(S) 请求必须在请求头中包含 Proxy-Authorization: Basic <your token="">.此 token 由 'user-region.sessionId:password' 字符串经过 Base64 编码后的结果, region和sessionId由使用者填写, region用于选择线路区域,sessionId用于线路保持和切换,二者均可留空,形如 user.sessionId:password 或者 user-region:password,<em><strong>请注意分割符号分别为'-'和 '.'</strong></em>,region取值范围在下面支持区域列表里, <em><strong>sessionId必须是9位正整数</strong></em>.</your></li>
+<li>Gateway 地址: w1.gateway.datasea.network:2002</li>
+<li>线路选择与复用, 通过修改region和sessionId实现:</li>
+</ol>
+<ul>
+<li>线路<em><strong>随机</strong></em>切换:每次访问 Gateway,没指定sessionId的情况下(例如 'james:password123456'), 后端都会自动为您切换至一条随机可用线路</li>
+<li>线路<em><strong>强制</strong></em>切换: 或者每次指定不一样的9位数sid以强制切换,如果用户对切换线路的要求比较严格,推荐采用这种方式.</li>
+<li>指定线路区域: 如需指定线路的区域,请在认证信息中使用 'user-region:password' 的格式,例如:'james-us:password123456',不填写region即为随机区域.</li>
+<li>线路复用: 如需复用特定线路,请填写sessionId,例如:'james.987654321:password123456',保持sessionId不变即可复用相同的线路,有效时长10分钟.</li>
+<li>同时指定区域和sessionId也是合法的,例如 'james-us.987654321:password123456'.</li>
+<li>访问速率控制: 为保证服务稳定性,请将您的访问速率控制在 100 requests/s 以内.</li>
+</ul>
+<h2 id="支持区域与国家列表">支持区域与国家列表 </h2>
+<h3 id="欧洲-europe">欧洲 (Europe) </h3>
+<p>at -- Austria -- 奥地利<br>
+uk -- United Kingdom -- 英国<br>
+ba -- Bosnia and Herzegovina -- 波黑<br>
+be -- Belgium -- 比利时<br>
+bg -- Bulgaria -- 保加利亚<br>
+by -- Belarus -- 白俄罗斯<br>
+ch -- Switzerland -- 瑞士<br>
+de -- Germany -- 德国<br>
+dk -- Denmark -- 丹麦<br>
+ee -- Estonia -- 爱沙尼亚<br>
+es -- Spain -- 西班牙<br>
+fi -- Finland -- 芬兰<br>
+fr -- France -- 法国<br>
+gr -- Greece -- 希腊<br>
+hr -- Croatia -- 克罗地亚<br>
+hu -- Hungary -- 匈牙利<br>
+ie -- Ireland -- 爱尔兰<br>
+is -- Iceland -- 冰岛<br>
+it -- Italy -- 意大利<br>
+lt -- Lithuania -- 立陶宛<br>
+lu -- Luxembourg -- 卢森堡<br>
+lv -- Latvia -- 拉脱维亚<br>
+mc -- Monaco -- 摩纳哥<br>
+nl -- Netherlands -- 荷兰<br>
+no -- Norway -- 挪威<br>
+pl -- Poland -- 波兰<br>
+pt -- Portugal -- 葡萄牙<br>
+ro -- Romania -- 罗马尼亚<br>
+rs -- Serbia -- 塞尔维亚<br>
+se -- Sweden -- 瑞典<br>
+si -- Slovenia -- 斯洛文尼亚<br>
+sk -- Slovakia -- 斯洛伐克</p>
+<h3 id="亚洲-asia">亚洲 (Asia) </h3>
+<p>ae -- United Arab Emirates -- 阿联酋<br>
+am -- Armenia -- 亚美尼亚<br>
+bd -- Bangladesh -- 孟加拉<br>
+ge -- Georgia -- 格鲁吉亚<br>
+id -- Indonesia -- 印尼<br>
+il -- Israel -- 以色列<br>
+in -- India -- 印度<br>
+iq -- Iraq -- 伊拉克<br>
+jo -- Jordan -- 约旦<br>
+jp -- Japan -- 日本<br>
+kr -- South Korea -- 韩国<br>
+kz -- Kazakhstan -- 哈萨克斯坦<br>
+lb -- Lebanon -- 黎巴嫩<br>
+mn -- Mongolia -- 蒙古<br>
+mv -- Maldives -- 马尔代夫<br>
+my -- Malaysia -- 马来西亚<br>
+om -- Oman -- 阿曼<br>
+ph -- Philippines -- 菲律宾<br>
+qa -- Qatar -- 卡塔尔<br>
+sa -- Saudi Arabia -- 沙特阿拉伯<br>
+sg -- Singapore -- 新加坡<br>
+lk -- Sri Lanka -- 斯里兰卡<br>
+th -- Thailand -- 泰国<br>
+tj -- Tajikistan -- 塔吉克斯坦<br>
+tm -- Turkmenistan -- 土库曼斯坦<br>
+tr -- Turkey -- 土耳其<br>
+uz -- Uzbekistan -- 乌兹别克斯坦<br>
+vn -- Vietnam -- 越南</p>
+<h3 id="北美洲-north-america">北美洲 (North America) </h3>
+<p>ca -- Canada -- 加拿大<br>
+cr -- Costa Rica -- 哥斯达黎加<br>
+cu -- Cuba -- 古巴<br>
+dm -- Dominica -- 多米尼克<br>
+do -- Dominican Republic -- 多米尼加<br>
+gd -- Grenada -- 格林纳达<br>
+gp -- Guadeloupe -- 瓜德罗普<br>
+gt -- Guatemala -- 危地马拉<br>
+hn -- Honduras -- 洪都拉斯<br>
+jm -- Jamaica -- 牙买加<br>
+mq -- Martinique -- 马提尼克<br>
+mx -- Mexico -- 墨西哥<br>
+ni -- Nicaragua -- 尼加拉瓜<br>
+pa -- Panama -- 巴拿马<br>
+pr -- Puerto Rico -- 波多黎各<br>
+us -- United States of America -- 美国</p>
+<h3 id="非洲-africa">非洲 (Africa) </h3>
+<p>cm -- Cameroon -- 喀麦隆<br>
+eg -- Egypt -- 埃及<br>
+er -- Eritrea -- 厄立特里亚<br>
+et -- Ethiopia -- 埃塞俄比亚<br>
+ga -- Gabon -- 加蓬<br>
+gh -- Ghana -- 加纳<br>
+gn -- Guinea -- 几内亚<br>
+ke -- Kenya -- 肯尼亚<br>
+km -- Comoros -- 科摩罗<br>
+lr -- Liberia -- 利比里亚<br>
+ls -- Lesotho -- 莱索托<br>
+ma -- Morocco -- 摩洛哥<br>
+na -- Namibia -- 纳米比亚<br>
+ne -- Niger -- 尼日尔<br>
+ng -- Nigeria -- 尼日利亚<br>
+rw -- Rwanda -- 卢旺达<br>
+sn -- Senegal -- 塞内加尔<br>
+tn -- Tunisia -- 突尼斯<br>
+tz -- Tanzania -- 坦桑尼亚<br>
+ug -- Uganda -- 乌干达<br>
+za -- South Africa -- 南非<br>
+zm -- Zambia -- 赞比亚<br>
+zw -- Zimbabwe -- 津巴布韦</p>
+<h3 id="南美洲-south-america">南美洲 (South America) </h3>
+<p>ar -- Argentina -- 阿根廷<br>
+bo -- Bolivia -- 玻利维亚<br>
+br -- Brazil -- 巴西<br>
+cl -- Chile -- 智利<br>
+co -- Colombia -- 哥伦比亚<br>
+ec -- Ecuador -- 厄瓜多尔<br>
+pe -- Peru -- 秘鲁<br>
+py -- Paraguay -- 巴拉圭<br>
+uy -- Uruguay -- 乌拉圭<br>
+ve -- Venezuela -- 委内瑞拉</p>
+<h3 id="大洋洲-oceania">大洋洲 (Oceania) </h3>
+<p>au -- Australia -- 澳大利亚<br>
+nz -- New Zealand -- 新西兰<br>
+pg -- Papua New Guinea -- 巴布亚新几内亚<br>
+pw -- Palau -- 帕劳<br>
+to -- Tonga -- 汤加<br>
+tv -- Tuvalu -- 图瓦卢<br>
+vu -- Vanuatu -- 瓦努阿图</p>
+<h2 id="调用示例">调用示例 </h2>
+<p>命令行调用 (cURL)</p>
+<p>curl -x <a href="http://w1.gateway.datasea.network:2002">http://w1.gateway.datasea.network:2002</a> -U &lt;user&gt;:&lt;passwd&gt; <a href="https://ipinfo.io/json">https://ipinfo.io/json</a></p>
+<p>请注意: 将 &lt;user&gt; 和 &lt;passwd&gt; 替换为您申请到的实际用户名和密码.<br>
+Python 调用 (requests 库)</p>
+<pre data-role="codeBlock" data-info="other" class="language-other other"><code>import requests
+
+# 请替换为您的实际用户名和密码
+my_user = "aaaaaa"
+my_psw = "bbbbbbbb"
+
+# Gateway 地址
+my_gateway0 = "w1.gateway.datasea.network:2002"
+
+# 设置请求头(可选,可根据需要修改)
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/109.0"
+}
+
+auth_proxy0 = f"http://{my_user}:{my_psw}@{my_gateway0}"
+
+try:
+    resp = requests.get("https://ipinfo.io/json", proxies={"http": auth_proxy0, "https": auth_proxy0}, headers=headers)
+    print(f"Successfully connected via {my_gateway0}. Response: {resp.text.strip()}")
+
+except requests.exceptions.RequestException as e:
+    print(f"An error occurred: {e}")
+</code></pre><h2 id="服务限制说明">服务限制说明 </h2>
+<p>重要提示:</p>
+<p>原来申请过的用户名密码均可正常使用</p>
+<p><em><strong>Datasea 不提供中国大陆地区的网络服务,并已对来自中国大陆区域的网络连接进行屏蔽.因此,您需要从中国大陆以外的地区发起网络请求才能成功访问我们的服务</strong></em></p>
+<p>请您自行准备海外服务器或海外客户端,通过这些节点访问Datasea Gateway.</p>
+
+      </div>
+      
+      
+    
+    
+    
+    
+    
+    
+  
+    </body></html>

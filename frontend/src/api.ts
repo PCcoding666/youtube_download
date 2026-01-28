@@ -150,9 +150,143 @@ export const healthCheck = async (): Promise<boolean> => {
   }
 };
 
-// New function for direct URL extraction via yt-dlp + AgentGo auth
+// Direct URL extraction via AgentGo cloud browser (hides server IP)
 export const extractDirectURLs = async (request: ExtractURLRequest): Promise<ExtractURLResponse> => {
-  const response = await api.post<ExtractURLResponse>('/api/v1/extract', request);
+  const response = await api.post<ExtractURLResponse>('/api/v1/extract/agentgo', request);
+  return response.data;
+};
+
+// ==================== 用户认证相关 ====================
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  username?: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface UserInfo {
+  id: string;
+  email: string;
+  username: string | null;
+  created_at: string;
+  is_premium?: boolean;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  message: string;
+  access_token: string;
+  token_type: string;
+  user: UserInfo;
+}
+
+export interface QuotaInfo {
+  daily_limit: number;
+  used_today: number;
+  remaining: number;
+  is_premium: boolean;
+}
+
+// Token 管理
+const TOKEN_KEY = 'auth_token';
+
+export const saveAuthToken = (token: string): void => {
+  localStorage.setItem(TOKEN_KEY, token);
+  api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+};
+
+export const getAuthToken = (): string | null => {
+  return localStorage.getItem(TOKEN_KEY);
+};
+
+export const clearAuthToken = (): void => {
+  localStorage.removeItem(TOKEN_KEY);
+  delete api.defaults.headers.common['Authorization'];
+};
+
+// 初始化时检查 token
+const initToken = getAuthToken();
+if (initToken) {
+  api.defaults.headers.common['Authorization'] = `Bearer ${initToken}`;
+}
+
+// 用户注册
+export const register = async (request: RegisterRequest): Promise<AuthResponse> => {
+  const response = await api.post<AuthResponse>('/api/v1/auth/register', request);
+  saveAuthToken(response.data.access_token);
+  return response.data;
+};
+
+// 用户登录
+export const login = async (request: LoginRequest): Promise<AuthResponse> => {
+  const response = await api.post<AuthResponse>('/api/v1/auth/login', request);
+  saveAuthToken(response.data.access_token);
+  return response.data;
+};
+
+// 用户登出
+export const logout = async (): Promise<void> => {
+  try {
+    await api.post('/api/v1/auth/logout');
+  } finally {
+    clearAuthToken();
+  }
+};
+
+// 获取当前用户信息
+export const getCurrentUser = async (): Promise<UserInfo | null> => {
+  try {
+    const response = await api.get<UserInfo>('/api/v1/auth/me');
+    return response.data;
+  } catch {
+    return null;
+  }
+};
+
+// 获取用户配额
+export const getUserQuota = async (): Promise<QuotaInfo | null> => {
+  try {
+    const response = await api.get<QuotaInfo>('/api/v1/user/quota');
+    return response.data;
+  } catch {
+    return null;
+  }
+};
+
+// 检查匿名用户配额
+export const checkAnonymousQuota = async (): Promise<QuotaInfo | null> => {
+  try {
+    const response = await api.get<QuotaInfo>('/api/v1/quota/anonymous');
+    return response.data;
+  } catch {
+    return null;
+  }
+};
+
+// ==================== 支付相关 ====================
+
+export interface PaymentOrder {
+  order_id: string;
+  order_number: string;
+  amount: number;
+  status: string;
+  qr_code_url?: string;
+}
+
+// 创建支付订单
+export const createPaymentOrder = async (plan: string): Promise<PaymentOrder> => {
+  const response = await api.post<PaymentOrder>('/api/v1/payment/create', { plan });
+  return response.data;
+};
+
+// 完成支付
+export const completePayment = async (orderId: string): Promise<{ success: boolean }> => {
+  const response = await api.post<{ success: boolean }>('/api/v1/payment/complete', { order_id: orderId });
   return response.data;
 };
 

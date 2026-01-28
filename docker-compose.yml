@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: yt-postgres
+    environment:
+      - POSTGRES_DB=ytdownloader
+      - POSTGRES_USER=ytuser
+      - POSTGRES_PASSWORD=ytpassword123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ytuser -d ytdownloader"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # bgutil PO Token provider - generates PO Tokens for yt-dlp
   bgutil:
     image: brainicism/bgutil-ytdlp-pot-provider:latest
@@ -35,7 +54,11 @@ services:
       # bgutil PO Token provider URL (container name in Docker network)
       - BGUTIL_URL=http://bgutil:4416
       - CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:80
+      # PostgreSQL Database
+      - DATABASE_URL=postgresql://ytuser:ytpassword123@postgres:5432/ytdownloader
     depends_on:
+      postgres:
+        condition: service_healthy
       bgutil:
         condition: service_healthy
     volumes:
@@ -55,6 +78,10 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
 
 networks:
   default:

@@ -4,6 +4,7 @@ Load settings from environment variables.
 
 from typing import Optional, List
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from functools import lru_cache
 
 
@@ -37,6 +38,12 @@ class Settings(BaseSettings):
 
     # HTTP Proxy for YouTube access (used by yt-dlp)
     http_proxy: Optional[str] = None
+    
+    @property
+    def effective_http_proxy(self) -> Optional[str]:
+        """Get HTTP proxy from environment variable or config."""
+        import os
+        return self.http_proxy or os.environ.get("HTTP_PROXY")
 
     # Supabase Configuration
     supabase_url: str = ""
@@ -75,6 +82,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"
+        populate_by_name = True  # Allow both field name and alias
 
 
 @lru_cache()

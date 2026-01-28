@@ -32,6 +32,7 @@ from app.services.transcriber import ParaformerTranscriber
 from app.services.storage import get_storage
 from app.services.auth_service import get_auth_service, get_current_user, require_auth
 from app.utils.ffmpeg_tools import extract_audio, check_ffmpeg_installed
+from app.database import get_database
 
 logger = logging.getLogger(__name__)
 
@@ -456,6 +457,30 @@ async def health_check():
     return HealthResponse(status="healthy", version="1.0.0")
 
 
+@router.get("/quota/anonymous")
+async def check_anonymous_quota(request: Request):
+    """
+    检查匿名用户的配额（基于IP）
+    
+    Returns:
+        剩余使用次数
+    """
+    db = get_database()
+    client_ip = get_client_ip(request)
+    
+    can_use, usage_count = db.check_anonymous_usage(client_ip)
+    remaining = max(0, 3 - usage_count)
+    
+    return {
+        "ip": client_ip,
+        "used": usage_count,
+        "remaining": remaining,
+        "total": 3,
+        "can_use": can_use,
+        "need_register": not can_use
+    }
+
+
 @router.get("/system/info")
 async def system_info(request: Request):
     """
@@ -870,17 +895,36 @@ async def get_user_history(
 # ============================================================================
 
 
+async def get_current_user_local(authorization: Optional[str] = Header(None)) -> Optional[dict]:
+    """从本地数据库获取当前用户"""
+    if not authorization:
+        return None
+
+    # 解析 Bearer token
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+
+    token = parts[1]
+    db = get_database()
+    user = db.verify_token(token)
+
+    return user
+
+
 @router.post("/extract", response_model=ExtractURLResponse)
 async def extract_direct_urls(
     request_data: ExtractURLRequest,
     request: Request,
-    current_user: Optional[dict] = Depends(get_current_user)
+    authorization: Optional[str] = Header(None)
 ):
     """
     Download YouTube video and upload to OSS.
 
-    Requires authentication if Supabase is configured.
-    Checks and deducts user quota before processing.
+    允许匿名用户使用3次（基于IP），之后需要注册+付费。
+    注册用户无限制使用。
+    
+    Anonymous users get 3 downloads (IP-based), then need to register + upgrade.
 
     Workflow:
     1. Verify user authentication (if configured)
@@ -920,25 +964,40 @@ async def extract_direct_urls(
     region = None
     user_id = None
 
-    # Check authentication and quota
-    auth_service = get_auth_service()
-    if auth_service.is_configured():
-        if not current_user:
+    # 使用本地数据库进行认证和配额检查
+    db = get_database()
+    
+    # 获取客户端IP
+    client_ip = get_client_ip(request)
+    
+    # 获取当前用户（可选）
+    current_user = await get_current_user_local(authorization)
+    
+    if current_user:
+        # 已登录用户 - 无限制使用
+        user_id = current_user["id"]
+        quota_ok, quota_msg = db.check_and_deduct_quota(user_id)
+        
+        if not quota_ok:
             raise HTTPException(
-                status_code=401,
-                detail="Authentication required. Please login to use this service."
+                status_code=402,
+                detail=quota_msg
             )
         
-        user_id = current_user.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid user token")
+        logger.info(f"[{task_id}] User {user_id} ({current_user['username']}) - {quota_msg}")
+    else:
+        # 匿名用户 - 基于IP限制3次
+        can_use, usage_count = db.check_anonymous_usage(client_ip)
         
-        # Check and reserve quota
-        quota_ok, quota_msg = await auth_service.check_and_deduct_quota(user_id)
-        if not quota_ok:
-            raise HTTPException(status_code=402, detail=quota_msg)
+        if not can_use:
+            raise HTTPException(
+                status_code=402,
+                detail=f"免费额度已用完（{usage_count}/3次）。请注册并付费以继续使用。"
+            )
         
-        logger.info(f"[{task_id}] User {user_id} - {quota_msg}")
+        # 增加匿名使用次数
+        new_count = db.increment_anonymous_usage(client_ip)
+        logger.info(f"[{task_id}] Anonymous user {client_ip} - 使用次数: {new_count}/3")
 
     try:
         from app.services.storage import get_storage
@@ -965,41 +1024,103 @@ async def extract_direct_urls(
         else:
             format_str = f"bestvideo[height<={resolution}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={resolution}]+bestaudio/best[height<={resolution}]"
 
-        # Build yt-dlp command
-        cmd = [
-            "yt-dlp",
-            "-f", format_str,
-            "--merge-output-format", "mp4",
-            "-o", f"{temp_dir}/%(id)s.%(ext)s",
-            "--print-json",  # Output video info as JSON
-            "--no-simulate",
-            request_data.youtube_url
-        ]
-
-        # Add proxy if configured
-        if settings.http_proxy:
-            cmd.insert(1, "--proxy")
-            cmd.insert(2, settings.http_proxy)
-            logger.info(f"[{task_id}] Using proxy: {settings.http_proxy}")
-
-        # Run yt-dlp in subprocess
-        loop = asyncio.get_running_loop()
+        # Import agentgo service
+        from app.services.agentgo_service import get_agentgo_service
+        agentgo = get_agentgo_service()
         
-        def run_ytdlp():
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=600  # 10 minutes timeout
-            )
-            return result
+        # Retry mechanism for YouTube anti-bot detection
+        MAX_RETRIES = 3
+        last_error = None
+        result = None
+        
+        for attempt in range(1, MAX_RETRIES + 1):
+            logger.info(f"[{task_id}] Download attempt {attempt}/{MAX_RETRIES}")
+            
+            # Get cookies (force refresh on retry)
+            cookie_file_path = None
+            try:
+                if attempt == 1:
+                    # First attempt: try cached cookies
+                    cookie_file_path = agentgo.get_cached_cookie_file(region)
+                
+                # If no cached cookies or retrying, get fresh ones
+                if not cookie_file_path and agentgo.is_api_configured():
+                    logger.info(f"[{task_id}] Fetching fresh cookies for region: {region} (attempt {attempt})")
+                    auth_bundle = await asyncio.wait_for(
+                        agentgo.get_youtube_authentication_bundle(region=region, force_refresh=(attempt > 1)),
+                        timeout=120
+                    )
+                    if auth_bundle and auth_bundle.cookie_file_path:
+                        cookie_file_path = auth_bundle.cookie_file_path
+                        logger.info(f"[{task_id}] Got fresh cookies: {cookie_file_path}")
+            except asyncio.TimeoutError:
+                logger.warning(f"[{task_id}] Cookie extraction timed out (attempt {attempt})")
+            except Exception as e:
+                logger.warning(f"[{task_id}] Failed to get cookies (attempt {attempt}): {e}")
 
-        result = await loop.run_in_executor(None, run_ytdlp)
+            # Build yt-dlp command
+            cmd = [
+                "yt-dlp",
+                "-f", format_str,
+                "--merge-output-format", "mp4",
+                "-o", f"{temp_dir}/%(id)s.%(ext)s",
+                "--print-json",
+                "--no-simulate",
+                request_data.youtube_url
+            ]
 
-        if result.returncode != 0:
+            # Add cookies if available
+            if cookie_file_path and Path(cookie_file_path).exists():
+                cmd.insert(1, "--cookies")
+                cmd.insert(2, cookie_file_path)
+                logger.info(f"[{task_id}] Using cookies file: {cookie_file_path}")
+            else:
+                logger.warning(f"[{task_id}] No cookies available, YouTube may block the request")
+
+            # Add proxy if configured
+            if settings.http_proxy:
+                cmd.insert(1, "--proxy")
+                cmd.insert(2, settings.http_proxy)
+                logger.info(f"[{task_id}] Using proxy: {settings.http_proxy}")
+
+            # Run yt-dlp in subprocess
+            loop = asyncio.get_running_loop()
+            
+            def run_ytdlp():
+                return subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # 10 minutes timeout
+                )
+
+            result = await loop.run_in_executor(None, run_ytdlp)
+
+            if result.returncode == 0:
+                logger.info(f"[{task_id}] Download succeeded on attempt {attempt}")
+                break  # Success!
+            
+            # Check if it's a bot detection error (worth retrying)
             error_msg = result.stderr[-500:] if result.stderr else "Unknown error"
-            logger.error(f"[{task_id}] yt-dlp failed: {error_msg}")
-            raise Exception(f"Download failed: {error_msg}")
+            is_bot_error = "Sign in to confirm you're not a bot" in error_msg or "bot" in error_msg.lower()
+            
+            if is_bot_error and attempt < MAX_RETRIES:
+                logger.warning(f"[{task_id}] Bot detection on attempt {attempt}, will retry with fresh cookies...")
+                last_error = error_msg
+                # Clear cached cookies to force refresh
+                try:
+                    cached_file = agentgo.get_cached_cookie_file(region)
+                    if cached_file and Path(cached_file).exists():
+                        Path(cached_file).unlink()
+                        logger.info(f"[{task_id}] Cleared cached cookies for retry")
+                except Exception:
+                    pass
+                await asyncio.sleep(2)  # Brief delay before retry
+            else:
+                logger.error(f"[{task_id}] yt-dlp failed: {error_msg}")
+                last_error = error_msg
+                if attempt == MAX_RETRIES:
+                    raise Exception(f"Download failed after {MAX_RETRIES} attempts: {error_msg}")
 
         # Parse video info from JSON output
         video_info = {}
@@ -1095,16 +1216,15 @@ async def extract_direct_urls(
             resolution=resolution,
         )
 
-        # Log usage to Supabase
-        if user_id and auth_service.is_configured():
-            await auth_service.log_usage(
-                user_id=user_id,
-                video_url=request_data.youtube_url,
-                video_title=video_info.get("title", "Unknown"),
-                resolution=resolution,
-                file_size=file_size,
-                oss_url=oss_video_url
-            )
+        # 记录使用日志到本地数据库
+        db.log_usage(
+            video_url=request_data.youtube_url,
+            video_title=video_info.get("title", "Unknown"),
+            resolution=resolution,
+            file_size=file_size,
+            user_id=user_id,
+            ip_address=client_ip
+        )
 
         return ExtractURLResponse(
             success=True,
@@ -1355,3 +1475,102 @@ async def proxy_download(url: str, filename: str = "video.mp4"):
     except Exception as e:
         logger.error(f"Proxy download failed: {e}")
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
+
+@router.post("/extract/direct")
+async def extract_direct_urls_only(request_data: ExtractURLRequest, request: Request):
+    """
+    Extract direct YouTube download URLs without downloading to server.
+    
+    This is a lightweight endpoint that only extracts URLs - 
+    no server-side download, no OSS upload.
+    The user downloads directly from YouTube CDN.
+    """
+    start_time = time.time()
+
+    # Validate URL
+    if not request_data.youtube_url.startswith(
+        ("https://www.youtube.com", "https://youtube.com", "https://youtu.be")
+    ):
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+
+    try:
+        from app.services.url_extractor import extract_youtube_urls
+
+        # Get region based on user's IP
+        region, country_code, client_ip = await get_region_for_request(request)
+        
+        resolution = request_data.resolution.value
+        logger.info(
+            f"Direct URL extraction: {request_data.youtube_url[:50]}... "
+            f"(IP: {client_ip}, Resolution: {resolution})"
+        )
+
+        # Extract URLs directly via yt-dlp with AgentGo authentication
+        result = await asyncio.wait_for(
+            extract_youtube_urls(
+                url=request_data.youtube_url,
+                resolution=resolution,
+                region=region,  # Pass region to use AgentGo auth
+                timeout=120,
+            ),
+            timeout=180,
+        )
+
+        extraction_time = time.time() - start_time
+        
+        if not result:
+            return {
+                "success": False,
+                "error_message": "Failed to extract video URLs",
+                "extraction_time": extraction_time,
+            }
+
+        video_info = result.get("video_info", {})
+        download_urls = result.get("download_urls", {})
+        
+        return ExtractURLResponse(
+            success=True,
+            video_info=ExtractedVideoInfo(
+                video_id=video_info.get("video_id", ""),
+                title=video_info.get("title", "Unknown"),
+                duration=video_info.get("duration", 0),
+                thumbnail=video_info.get("thumbnail"),
+                description=video_info.get("description"),
+                uploader=video_info.get("uploader"),
+                uploader_id=video_info.get("uploader_id"),
+                view_count=video_info.get("view_count"),
+                like_count=video_info.get("like_count"),
+                upload_date=video_info.get("upload_date"),
+                format_count=len(result.get("all_formats", [])),
+            ),
+            download_urls=DownloadURLs(
+                video_url=download_urls.get("video_url"),
+                audio_url=download_urls.get("audio_url"),
+                video_format=download_urls.get("video_format"),
+                audio_format=download_urls.get("audio_format"),
+                needs_merge=download_urls.get("needs_merge", False),
+                resolution=resolution,
+            ),
+            all_formats=result.get("all_formats"),
+            error_message=None,
+            extraction_time=extraction_time,
+            client_ip=client_ip,
+            detected_country=country_code,
+            agentgo_region=region,
+            auth_method="direct_ytdlp",
+        )
+
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "error_message": "Extraction timed out",
+            "extraction_time": time.time() - start_time,
+        }
+    except Exception as e:
+        logger.error(f"Direct extraction error: {e}")
+        return {
+            "success": False,
+            "error_message": str(e),
+            "extraction_time": time.time() - start_time,
+        }

@@ -12,7 +12,9 @@ from pathlib import Path
 
 from app.config import settings
 from app.api.routes import router
+from app.api.auth_routes import router as auth_router
 from app.utils.ffmpeg_tools import check_ffmpeg_installed, get_ffmpeg_version
+from app.database import get_database
 
 
 # Configure comprehensive logging with security considerations
@@ -67,6 +69,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     logger.info("Starting YouTube Transcriber API...")
+
+    # 初始化数据库
+    try:
+        db = get_database()
+        logger.info("本地数据库初始化成功")
+    except Exception as e:
+        logger.error(f"数据库初始化失败: {e}")
 
     # Check FFmpeg
     if check_ffmpeg_installed():
@@ -134,6 +143,7 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(router)
+app.include_router(auth_router)
 
 
 @app.get("/")
