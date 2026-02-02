@@ -13,6 +13,8 @@ from pathlib import Path
 from app.config import settings
 from app.api.routes import router
 from app.api.auth_routes import router as auth_router
+from app.api.admin_routes import router as admin_router
+from app.middleware.logging_middleware import RequestLoggingMiddleware
 from app.utils.ffmpeg_tools import check_ffmpeg_installed, get_ffmpeg_version
 from app.database import get_database
 
@@ -41,12 +43,27 @@ class SecureFormatter(logging.Formatter):
 
 
 # Configure logging with enhanced security and monitoring
+# Create logs directory
+LOG_DIR = Path("/app/logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# Create handlers
+console_handler = logging.StreamHandler()
+
+# File handler with daily rotation
+from logging.handlers import TimedRotatingFileHandler
+file_handler = TimedRotatingFileHandler(
+    filename=LOG_DIR / "app.log",
+    when="midnight",
+    interval=1,
+    backupCount=30,  # Keep 30 days of logs
+    encoding="utf-8"
+)
+
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper()),
     format="%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-    ],
+    handlers=[console_handler, file_handler],
 )
 
 # Apply secure formatter to all handlers
@@ -141,9 +158,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add request logging middleware
+app.add_middleware(RequestLoggingMiddleware)
+
 # Include API routes
 app.include_router(router)
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 
 @app.get("/")

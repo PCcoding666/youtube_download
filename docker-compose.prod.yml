@@ -44,6 +44,7 @@ services:
       - .env
     environment:
       - BGUTIL_URL=http://bgutil:4416
+      - YT_DLP_POT_PROVIDER_URL=http://bgutil:4416
       - CORS_ORIGINS=http://u2foru.site,https://u2foru.site,http://localhost:5173
       - DATABASE_URL=postgresql://ytuser:ytpassword123@postgres:5432/ytdownloader
     depends_on:
@@ -53,6 +54,7 @@ services:
         condition: service_healthy
     volumes:
       - /tmp/video_processing:/tmp/video_processing
+      - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
@@ -65,7 +67,7 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_API_URL=http://u2foru.site/api
+        - VITE_API_URL=https://u2foru.site
     container_name: yt-frontend
     ports:
       - "9000:80"

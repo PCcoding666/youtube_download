@@ -7,8 +7,9 @@ import oss2
 import asyncio
 import logging
 import os
-from typing import Optional
+from typing import Optional, List
 from pathlib import Path
+from datetime import datetime, timedelta
 import mimetypes
 
 from app.config import settings
@@ -217,6 +218,124 @@ class OSSStorage:
         except Exception as e:
             logger.error(f"Failed to check OSS object: {e}")
             return False
+
+    async def cleanup_old_files(
+        self, 
+        prefix: str = "downloads/", 
+        max_age_hours: int = 24,
+        dry_run: bool = False
+    ) -> dict:
+        """
+        Clean up old files from OSS.
+
+        Args:
+            prefix: OSS path prefix to clean (default: "downloads/")
+            max_age_hours: Delete files older than this (default: 24 hours)
+            dry_run: If True, only list files without deleting
+
+        Returns:
+            Dict with cleanup statistics
+        """
+        loop = asyncio.get_event_loop()
+        cutoff_time = datetime.utcnow() - timedelta(hours=max_age_hours)
+        
+        stats = {
+            "scanned": 0,
+            "deleted": 0,
+            "failed": 0,
+            "total_size_bytes": 0,
+            "deleted_files": [],
+            "dry_run": dry_run
+        }
+
+        def do_cleanup():
+            # Temporarily disable proxy for OSS access
+            saved_proxy = self._disable_proxy_env()
+            try:
+                # List all objects with the given prefix
+                for obj in oss2.ObjectIterator(self.bucket, prefix=prefix):
+                    stats["scanned"] += 1
+                    
+                    # Check if file is older than cutoff
+                    last_modified = obj.last_modified
+                    if last_modified:
+                        # Convert timestamp to datetime
+                        file_time = datetime.utcfromtimestamp(last_modified)
+                        
+                        if file_time < cutoff_time:
+                            if dry_run:
+                                stats["deleted"] += 1
+                                stats["total_size_bytes"] += obj.size or 0
+                                stats["deleted_files"].append({
+                                    "key": obj.key,
+                                    "size": obj.size,
+                                    "last_modified": file_time.isoformat()
+                                })
+                            else:
+                                try:
+                                    self.bucket.delete_object(obj.key)
+                                    stats["deleted"] += 1
+                                    stats["total_size_bytes"] += obj.size or 0
+                                    stats["deleted_files"].append({
+                                        "key": obj.key,
+                                        "size": obj.size,
+                                        "last_modified": file_time.isoformat()
+                                    })
+                                    logger.info(f"Deleted old file: {obj.key}")
+                                except Exception as e:
+                                    stats["failed"] += 1
+                                    logger.error(f"Failed to delete {obj.key}: {e}")
+                return stats
+            finally:
+                self._restore_proxy_env(saved_proxy)
+
+        try:
+            logger.info(f"Starting OSS cleanup: prefix={prefix}, max_age={max_age_hours}h, dry_run={dry_run}")
+            result = await loop.run_in_executor(None, do_cleanup)
+            logger.info(
+                f"OSS cleanup complete: scanned={result['scanned']}, "
+                f"deleted={result['deleted']}, failed={result['failed']}, "
+                f"freed={result['total_size_bytes'] / 1024 / 1024:.2f}MB"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"OSS cleanup failed: {e}")
+            raise StorageError(f"Cleanup failed: {e}")
+
+    async def list_files(self, prefix: str = "", limit: int = 100) -> List[dict]:
+        """
+        List files in OSS bucket.
+
+        Args:
+            prefix: Path prefix to filter
+            limit: Maximum number of files to return
+
+        Returns:
+            List of file info dicts
+        """
+        loop = asyncio.get_event_loop()
+
+        def do_list():
+            saved_proxy = self._disable_proxy_env()
+            try:
+                files = []
+                for i, obj in enumerate(oss2.ObjectIterator(self.bucket, prefix=prefix)):
+                    if i >= limit:
+                        break
+                    files.append({
+                        "key": obj.key,
+                        "size": obj.size,
+                        "last_modified": datetime.utcfromtimestamp(obj.last_modified).isoformat() if obj.last_modified else None
+                    })
+                return files
+            finally:
+                self._restore_proxy_env(saved_proxy)
+
+        try:
+            return await loop.run_in_executor(None, do_list)
+        except Exception as e:
+            logger.error(f"Failed to list OSS files: {e}")
+            return []
 
 
 # Global storage instance

@@ -50,6 +50,7 @@ class UserInfoResponse(BaseModel):
     username: str
     email: str
     is_premium: bool
+    is_admin: bool = False
     quota: dict
 
 
@@ -119,6 +120,7 @@ async def register(request: RegisterRequest):
             "username": user["username"],
             "email": user["email"],
             "is_premium": user["is_premium"],
+            "is_admin": user.get("is_admin", False),
         },
     )
 
@@ -153,6 +155,7 @@ async def login(request: LoginRequest):
             "username": user["username"],
             "email": user["email"],
             "is_premium": user["is_premium"],
+            "is_admin": user.get("is_admin", False),
         },
     )
 
@@ -173,6 +176,7 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         username=current_user["username"],
         email=current_user["email"],
         is_premium=current_user["is_premium"],
+        is_admin=current_user.get("is_admin", False),
         quota={
             "free_downloads_remaining": quota["free_downloads_remaining"],
             "total_downloads": quota["total_downloads"],

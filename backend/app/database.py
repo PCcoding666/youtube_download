@@ -10,10 +10,11 @@ from typing import Optional, Dict, Any
 import logging
 import os
 
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, Float
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, Float, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.sql import func
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, default=True)
     is_premium = Column(Boolean, default=False)
+    is_admin = Column(Boolean, default=False)  # 管理员标识
 
 
 class Session(Base):
@@ -103,6 +105,62 @@ class PaymentOrder(Base):
     status = Column(String(20), default="pending")  # pending, paid, failed
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     paid_at = Column(DateTime(timezone=True), nullable=True)
+
+
+# ============================================================================
+# 管理员统计相关表
+# ============================================================================
+
+class ApiUsageLog(Base):
+    """API 使用记录表 - 记录所有请求"""
+    __tablename__ = "api_usage_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    endpoint = Column(String(255), nullable=False, index=True)
+    method = Column(String(10), nullable=False)
+    status_code = Column(Integer)
+    response_time_ms = Column(Float)  # 响应时间(毫秒)
+    request_size = Column(Integer, default=0)  # 请求大小
+    response_size = Column(Integer, default=0)  # 响应大小
+    ip_address = Column(String(45), index=True)
+    user_agent = Column(String(500))
+    country_code = Column(String(10), index=True)
+    city = Column(String(100))
+    user_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class AgentGoUsageLog(Base):
+    """AgentGo 调用记录表"""
+    __tablename__ = "agentgo_usage_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    region = Column(String(20), nullable=False, index=True)
+    video_url = Column(Text)
+    video_id = Column(String(50), index=True)
+    success = Column(Boolean, default=False)
+    duration_seconds = Column(Float)
+    error_message = Column(Text, nullable=True)
+    extraction_method = Column(String(50))  # cookies/po_token/direct
+    ip_address = Column(String(45))
+    user_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class ProxyTrafficLog(Base):
+    """代理流量记录表"""
+    __tablename__ = "proxy_traffic_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    request_bytes = Column(BigInteger, default=0)
+    response_bytes = Column(BigInteger, default=0)
+    total_bytes = Column(BigInteger, default=0)
+    endpoint = Column(String(255), index=True)
+    video_id = Column(String(50), nullable=True)
+    resolution = Column(String(20))
+    ip_address = Column(String(45))
+    user_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 # ============================================================================
@@ -252,6 +310,7 @@ class Database:
                     "email": user.email,
                     "is_active": user.is_active,
                     "is_premium": user.is_premium,
+                    "is_admin": user.is_admin,
                 }
             return None
 
@@ -299,6 +358,7 @@ class Database:
                     "email": user.email,
                     "is_active": user.is_active,
                     "is_premium": user.is_premium,
+                    "is_admin": user.is_admin,
                 }
             return None
 
@@ -445,10 +505,163 @@ class Database:
                     "email": user.email,
                     "is_active": user.is_active,
                     "is_premium": user.is_premium,
+                    "is_admin": user.is_admin,
                     "created_at": user.created_at,
                 }
             return None
 
+        finally:
+            session.close()
+
+    # ========================================================================
+    # 管理员统计相关方法
+    # ========================================================================
+
+    def log_api_usage(
+        self,
+        endpoint: str,
+        method: str,
+        status_code: int,
+        response_time_ms: float,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        country_code: Optional[str] = None,
+        city: Optional[str] = None,
+        user_id: Optional[int] = None,
+        request_size: int = 0,
+        response_size: int = 0
+    ):
+        """记录 API 使用日志"""
+        session = self.get_session()
+        try:
+            log = ApiUsageLog(
+                endpoint=endpoint,
+                method=method,
+                status_code=status_code,
+                response_time_ms=response_time_ms,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                country_code=country_code,
+                city=city,
+                user_id=user_id,
+                request_size=request_size,
+                response_size=response_size
+            )
+            session.add(log)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"记录API使用日志失败: {e}")
+        finally:
+            session.close()
+
+    def log_agentgo_usage(
+        self,
+        region: str,
+        video_url: Optional[str] = None,
+        video_id: Optional[str] = None,
+        success: bool = False,
+        duration_seconds: float = 0,
+        error_message: Optional[str] = None,
+        extraction_method: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_id: Optional[int] = None
+    ):
+        """记录 AgentGo 调用日志"""
+        session = self.get_session()
+        try:
+            log = AgentGoUsageLog(
+                region=region,
+                video_url=video_url,
+                video_id=video_id,
+                success=success,
+                duration_seconds=duration_seconds,
+                error_message=error_message,
+                extraction_method=extraction_method,
+                ip_address=ip_address,
+                user_id=user_id
+            )
+            session.add(log)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"记录AgentGo使用日志失败: {e}")
+        finally:
+            session.close()
+
+    def log_proxy_traffic(
+        self,
+        request_bytes: int = 0,
+        response_bytes: int = 0,
+        endpoint: Optional[str] = None,
+        video_id: Optional[str] = None,
+        resolution: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_id: Optional[int] = None
+    ):
+        """记录代理流量日志"""
+        session = self.get_session()
+        try:
+            log = ProxyTrafficLog(
+                request_bytes=request_bytes,
+                response_bytes=response_bytes,
+                total_bytes=request_bytes + response_bytes,
+                endpoint=endpoint,
+                video_id=video_id,
+                resolution=resolution,
+                ip_address=ip_address,
+                user_id=user_id
+            )
+            session.add(log)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"记录代理流量日志失败: {e}")
+        finally:
+            session.close()
+
+    def set_user_admin(self, user_id: int, is_admin: bool) -> bool:
+        """设置用户管理员权限"""
+        session = self.get_session()
+        try:
+            user = session.query(User).filter(User.id == user_id).first()
+            if user:
+                user.is_admin = is_admin
+                session.commit()
+                return True
+            return False
+        except Exception as e:
+            session.rollback()
+            logger.error(f"设置管理员权限失败: {e}")
+            return False
+        finally:
+            session.close()
+
+    def get_all_users(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """获取所有用户列表"""
+        session = self.get_session()
+        try:
+            users = session.query(User).order_by(User.created_at.desc()).offset(offset).limit(limit).all()
+            return [
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "is_active": user.is_active,
+                    "is_premium": user.is_premium,
+                    "is_admin": user.is_admin,
+                    "created_at": user.created_at,
+                }
+                for user in users
+            ]
+        finally:
+            session.close()
+
+    def get_user_count(self) -> int:
+        """获取用户总数"""
+        session = self.get_session()
+        try:
+            return session.query(User).count()
         finally:
             session.close()
 

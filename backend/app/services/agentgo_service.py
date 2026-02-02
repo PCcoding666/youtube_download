@@ -1368,6 +1368,36 @@ class AgentGoService:
                 "AgentGo service fully configured and ready for token extraction"
             )
 
+    def _log_agentgo_usage(
+        self,
+        region: str,
+        video_url: Optional[str] = None,
+        video_id: Optional[str] = None,
+        success: bool = False,
+        duration_seconds: float = 0,
+        error_message: Optional[str] = None,
+        extraction_method: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_id: Optional[int] = None
+    ):
+        """记录 AgentGo 使用到数据库"""
+        try:
+            from app.database import get_database
+            db = get_database()
+            db.log_agentgo_usage(
+                region=region,
+                video_url=video_url,
+                video_id=video_id,
+                success=success,
+                duration_seconds=duration_seconds,
+                error_message=error_message,
+                extraction_method=extraction_method,
+                ip_address=ip_address,
+                user_id=user_id
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to log AgentGo usage: {e}")
+
     def _log_secure(
         self, level: int, message: str, sensitive_data: Optional[Dict[str, Any]] = None
     ):
@@ -2565,6 +2595,24 @@ class AgentGoService:
 
             except Exception as e:
                 self.logger.error(f"Direct extraction failed: {e}")
+                # Log failed extraction
+                video_id = None
+                try:
+                    import re
+                    match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11})', video_url)
+                    if match:
+                        video_id = match.group(1)
+                except Exception:
+                    pass
+                self._log_agentgo_usage(
+                    region=region,
+                    video_url=video_url,
+                    video_id=video_id,
+                    success=False,
+                    duration_seconds=time.time() - start_time,
+                    error_message=str(e),
+                    extraction_method="agentgo_direct"
+                )
                 return None
 
             finally:
@@ -2577,8 +2625,28 @@ class AgentGoService:
         # Process captured URLs
         duration = time.time() - start_time
 
+        # Extract video ID for logging
+        video_id = None
+        try:
+            import re
+            match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11})', video_url)
+            if match:
+                video_id = match.group(1)
+        except Exception:
+            pass
+
         if not captured_urls["video"] and not captured_urls["combined"]:
             self.logger.warning(f"No video URLs captured after {duration:.2f}s")
+            # Log failed extraction
+            self._log_agentgo_usage(
+                region=region,
+                video_url=video_url,
+                video_id=video_id,
+                success=False,
+                duration_seconds=duration,
+                error_message="No video URLs captured",
+                extraction_method="agentgo_direct"
+            )
             return None
 
         # Select best URLs based on resolution preference
@@ -2591,6 +2659,16 @@ class AgentGoService:
         self.logger.info(
             f"Direct extraction completed in {duration:.2f}s: "
             f"video={bool(result.get('video_url'))}, audio={bool(result.get('audio_url'))}"
+        )
+
+        # Log successful extraction
+        self._log_agentgo_usage(
+            region=region,
+            video_url=video_url,
+            video_id=video_id,
+            success=True,
+            duration_seconds=duration,
+            extraction_method="agentgo_direct"
         )
 
         return result

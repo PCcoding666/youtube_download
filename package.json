@@ -23,7 +23,7 @@
     "lint:fix:frontend": "cd frontend && npm run lint:fix",
     "build:prod": "./scripts/deploy-manual.sh",
     "deploy:manual": "./scripts/deploy-manual.sh",
-    "health:check": "curl -f http://localhost:8000/api/v1/health && curl -f http://localhost:3000"
+    "health:check": "curl -f http://localhost:8000/api/v1/health && curl -f http://localhost:5201"
   },
   "workspaces": [
     "frontend",

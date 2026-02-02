@@ -53,14 +53,14 @@ services:
       - LOG_LEVEL=INFO
       # bgutil PO Token provider URL (container name in Docker network)
       - BGUTIL_URL=http://bgutil:4416
-      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost,http://localhost:80
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:5201,http://localhost,http://localhost:80
       # PostgreSQL Database
       - DATABASE_URL=postgresql://ytuser:ytpassword123@postgres:5432/ytdownloader
     depends_on:
       postgres:
         condition: service_healthy
       bgutil:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - /tmp/video_processing:/tmp/video_processing
     restart: unless-stopped

@@ -7,10 +7,12 @@ ENV https_proxy=""
 ENV HTTP_PROXY=""
 ENV HTTPS_PROXY=""
 
-# Install system dependencies
+# Install system dependencies including Node.js for bgutil JS challenge solving
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg curl && \
+    apt-get install -y --no-install-recommends ffmpeg curl gnupg && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory

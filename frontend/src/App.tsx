@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Youtube,
   Download,
   Loader2,
   CheckCircle2,
   AlertCircle,
+  Info,
   Play,
   Clock,
   Link,
@@ -13,6 +15,7 @@ import {
   LogOut,
   CreditCard,
   Zap,
+  Shield,
 } from 'lucide-react';
 import {
   extractDirectURLs,
@@ -28,13 +31,40 @@ import {
   checkAnonymousQuota,
 } from './api';
 import type { ExtractURLResponse, VideoResolution, VideoFormatInfo, UserInfo, RegisterRequest, LoginRequest } from './api';
+import AdminDashboard from './components/admin/AdminDashboard';
+import PricingPage from './components/pricing/PricingPage';
+import LanguageSwitcher from './components/LanguageSwitcher';
 import './App.css';
 
 type AppState = 'idle' | 'extracting' | 'completed' | 'error';
 type AuthState = 'login' | 'register';
-type PageState = 'main' | 'payment' | 'auth';
+type PageState = 'main' | 'payment' | 'auth' | 'admin' | 'pricing';
+
+const VALID_PAGES: PageState[] = ['main', 'payment', 'auth', 'admin', 'pricing'];
+
+// 从 URL 参数获取初始页面状态
+function getInitialPageState(): PageState {
+  const params = new URLSearchParams(window.location.search);
+  const page = params.get('page');
+  if (page && VALID_PAGES.includes(page as PageState)) {
+    return page as PageState;
+  }
+  return 'main';
+}
+
+// 更新 URL 参数
+function updatePageUrl(page: PageState) {
+  const url = new URL(window.location.href);
+  if (page === 'main') {
+    url.searchParams.delete('page');
+  } else {
+    url.searchParams.set('page', page);
+  }
+  window.history.replaceState({}, '', url.toString());
+}
 
 function App() {
+  const { t } = useTranslation();
   const [url, setUrl] = useState('');
   const [resolution, setResolution] = useState<VideoResolution>('720');
   const [appState, setAppState] = useState<AppState>('idle');
@@ -52,8 +82,14 @@ function App() {
   // 匿名配额
   const [anonymousQuota, setAnonymousQuota] = useState<any>(null);
 
-  // 页面状态
-  const [pageState, setPageState] = useState<PageState>('main');
+  // 页面状态 - 从 URL 读取初始值
+  const [pageState, setPageStateInternal] = useState<PageState>(getInitialPageState);
+
+  // 切换页面并更新 URL
+  const setPageState = (page: PageState) => {
+    setPageStateInternal(page);
+    updatePageUrl(page);
+  };
 
   // 表单状态
   const [formData, setFormData] = useState({
@@ -106,6 +142,18 @@ function App() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    
+    // 前端验证
+    if (formData.username.length < 3) {
+      setError(t('auth.usernameTooShort'));
+      return;
+    }
+    if (formData.password.length < 6) {
+      setError(t('auth.passwordTooShort'));
+      return;
+    }
+    
     try {
       const request: RegisterRequest = {
         username: formData.username,
@@ -120,7 +168,7 @@ function App() {
         setError(response.message);
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || '注册失败');
+      setError(err.response?.data?.detail || t('auth.registerFailed'));
     }
   };
 
@@ -139,7 +187,7 @@ function App() {
         setError(response.message);
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || '登录失败');
+      setError(err.response?.data?.detail || t('auth.loginFailed'));
     }
   };
 
@@ -155,7 +203,7 @@ function App() {
     e.preventDefault();
 
     if (!url.trim()) {
-      setError('请输入YouTube URL');
+      setError(t('main.enterYoutubeUrl'));
       return;
     }
 
@@ -179,11 +227,11 @@ function App() {
           await loadAnonymousQuota();
         }
       } else {
-        setError(response.error_message || '提取失败');
+        setError(response.error_message || t('main.extractionFailed'));
         setAppState('error');
       }
     } catch (err: any) {
-      const errorMessage = err.response?.data?.detail || err.message || '提取失败';
+      const errorMessage = err.response?.data?.detail || err.message || t('main.extractionFailed');
       
       // 检查是否是配额用完的错误
       if (err.response?.status === 402) {
@@ -220,18 +268,32 @@ function App() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleDownload = (url: string, filename: string) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = (url: string, filename: string, resolution?: string) => {
+    // 检查是否是 YouTube CDN 链接（googlevideo.com）
+    // 如果是，使用后端代理下载以绕过防盗链
+    if (url.includes('googlevideo.com')) {
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const proxyUrl = `${API_BASE_URL}/api/v1/proxy-download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}&resolution=${encodeURIComponent(resolution || 'unknown')}`;
+      const link = document.createElement('a');
+      link.href = proxyUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      // 非 YouTube CDN 链接（如 OSS 链接），直接下载
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const formatFileSize = (bytes: number | null): string => {
-    if (!bytes) return '未知大小';
+    if (!bytes) return t('common.unknown') || 'Unknown size';
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
@@ -253,7 +315,7 @@ function App() {
 
   const handlePayment = async (planType: 'monthly' | 'yearly') => {
     if (!isAuthenticated) {
-      setError('请先注册登录');
+      setError(t('payment.pleaseLogin'));
       return;
     }
 
@@ -264,12 +326,12 @@ function App() {
       const result = await completePayment(order.order_number);
       
       if (result.success) {
-        alert('支付成功！您已升级为高级用户');
+        alert(t('payment.paymentSuccess'));
         await loadUserData();
         setPageState('main');
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || '支付失败');
+      setError(err.response?.data?.detail || t('payment.paymentFailed'));
     }
   };
 
@@ -280,8 +342,12 @@ function App() {
         <div className="auth-container">
           <div className="auth-header">
             <Youtube size={48} className="auth-logo" />
-            <h1>YouTube 下载器</h1>
-            <p className="auth-subtitle">免费额度已用完，注册后继续使用</p>
+            <h1>{t('common.appName')}</h1>
+            <p className="auth-subtitle">{t('auth.subtitle')}</p>
+          </div>
+
+          <div className="auth-lang-switcher">
+            <LanguageSwitcher />
           </div>
 
           <div className="auth-tabs">
@@ -292,7 +358,7 @@ function App() {
                 setError(null);
               }}
             >
-              登录
+              {t('auth.login')}
             </button>
             <button
               className={`auth-tab ${authState === 'register' ? 'active' : ''}`}
@@ -301,20 +367,20 @@ function App() {
                 setError(null);
               }}
             >
-              注册
+              {t('auth.register')}
             </button>
           </div>
 
           <form onSubmit={authState === 'login' ? handleLogin : handleRegister} className="auth-form">
             {authState === 'register' && (
               <div className="form-group">
-                <label htmlFor="username">用户名</label>
+                <label htmlFor="username">{t('auth.username')}</label>
                 <input
                   id="username"
                   type="text"
                   value={formData.username}
                   onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  placeholder="请输入用户名"
+                  placeholder={t('auth.enterUsername')}
                   required
                   minLength={3}
                 />
@@ -322,25 +388,25 @@ function App() {
             )}
 
             <div className="form-group">
-              <label htmlFor="email">邮箱</label>
+              <label htmlFor="email">{t('auth.email')}</label>
               <input
                 id="email"
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="请输入邮箱"
+                placeholder={t('auth.enterEmail')}
                 required
               />
             </div>
 
             <div className="form-group">
-              <label htmlFor="password">密码</label>
+              <label htmlFor="password">{t('auth.password')}</label>
               <input
                 id="password"
                 type="password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="请输入密码（至少6位）"
+                placeholder={t('auth.enterPassword')}
                 required
                 minLength={6}
               />
@@ -354,22 +420,45 @@ function App() {
             )}
 
             <button type="submit" className="auth-submit">
-              {authState === 'login' ? '登录' : '注册'}
+              {authState === 'login' ? t('auth.login') : t('auth.register')}
             </button>
           </form>
 
-          {authState === 'register' && (
-            <div className="auth-info">
-              <CheckCircle2 size={16} />
-              <span>注册后可 <strong>无限次下载</strong></span>
+          {authState === 'register' && !error && (
+            <div className="auth-tip">
+              <Info size={16} />
+              <span>{t('auth.registerBenefit')}</span>
             </div>
           )}
 
           <button onClick={() => setPageState('main')} className="back-btn" style={{marginTop: '1rem'}}>
-            返回主页
+            {t('common.backToHome')}
           </button>
         </div>
       </div>
+    );
+  }
+
+  // 渲染管理员页面
+  if (pageState === 'admin' && currentUser?.is_admin) {
+    return <AdminDashboard onBack={() => setPageState('main')} />;
+  }
+
+  // 渲染定价页面
+  if (pageState === 'pricing') {
+    return (
+      <PricingPage
+        onBack={() => setPageState('main')}
+        onSelectPlan={(plan) => {
+          if (!isAuthenticated) {
+            setPageState('auth');
+          } else {
+            handlePayment(plan as 'monthly' | 'yearly');
+          }
+        }}
+        isAuthenticated={isAuthenticated}
+        currentPlan={currentUser?.is_premium ? 'pro' : 'free'}
+      />
     );
   }
 
@@ -380,69 +469,72 @@ function App() {
         <header className="header">
           <div className="logo">
             <Youtube size={32} />
-            <h1>YouTube 下载器</h1>
+            <h1>{t('common.appName')}</h1>
           </div>
-          <div className="user-info">
-            <User size={20} />
-            <span>{currentUser?.username}</span>
-            <button onClick={handleLogout} className="logout-btn">
-              <LogOut size={16} />
-            </button>
+          <div className="header-right">
+            <LanguageSwitcher />
+            <div className="user-info">
+              <User size={20} />
+              <span>{currentUser?.username}</span>
+              <button onClick={handleLogout} className="logout-btn">
+                <LogOut size={16} />
+              </button>
+            </div>
           </div>
         </header>
 
         <main className="main payment-page">
           <div className="payment-header">
             <CreditCard size={48} />
-            <h2>升级到高级版</h2>
-            <p>升级后可无限次使用</p>
+            <h2>{t('payment.upgradeTitle')}</h2>
+            <p>{t('payment.upgradeDesc')}</p>
           </div>
 
           <div className="pricing-cards">
             <div className="pricing-card">
               <div className="plan-header">
-                <h3>月度会员</h3>
+                <h3>{t('payment.monthlyPlan')}</h3>
                 <div className="price">
                   <span className="amount">¥9.99</span>
-                  <span className="period">/月</span>
+                  <span className="period">{t('payment.perMonth')}</span>
                 </div>
               </div>
               <ul className="features">
-                <li><CheckCircle2 size={16} /> 无限次下载</li>
-                <li><CheckCircle2 size={16} /> 支持所有分辨率</li>
-                <li><CheckCircle2 size={16} /> 高速下载</li>
-                <li><CheckCircle2 size={16} /> 无广告</li>
+                <li><CheckCircle2 size={16} /> {t('payment.features.unlimited')}</li>
+                <li><CheckCircle2 size={16} /> {t('payment.features.allResolutions')}</li>
+                <li><CheckCircle2 size={16} /> {t('payment.features.highSpeed')}</li>
+                <li><CheckCircle2 size={16} /> {t('payment.features.noAds')}</li>
               </ul>
               <button onClick={() => handlePayment('monthly')} className="plan-btn">
-                选择月度会员
+                {t('payment.selectMonthly')}
               </button>
             </div>
 
             <div className="pricing-card featured">
-              <div className="badge">最划算</div>
+              <div className="badge">{t('payment.bestValue')}</div>
               <div className="plan-header">
-                <h3>年度会员</h3>
+                <h3>{t('payment.yearlyPlan')}</h3>
                 <div className="price">
                   <span className="amount">¥99.99</span>
-                  <span className="period">/年</span>
+                  <span className="period">{t('payment.perYear')}</span>
                 </div>
-                <div className="save-badge">节省 ¥20</div>
+                <div className="save-badge">{t('payment.save')}</div>
               </div>
               <ul className="features">
-                <li><Zap size={16} /> 无限次下载</li>
-                <li><Zap size={16} /> 支持所有分辨率</li>
-                <li><Zap size={16} /> 高速下载</li>
-                <li><Zap size={16} /> 无广告</li>
-                <li><Zap size={16} /> 优先支持</li>
+                <li><Zap size={16} /> {t('payment.features.unlimited')}</li>
+                <li><Zap size={16} /> {t('payment.features.allResolutions')}</li>
+                <li><Zap size={16} /> {t('payment.features.highSpeed')}</li>
+                <li><Zap size={16} /> {t('payment.features.noAds')}</li>
+                <li><Zap size={16} /> {t('payment.features.prioritySupport')}</li>
               </ul>
               <button onClick={() => handlePayment('yearly')} className="plan-btn featured-btn">
-                选择年度会员
+                {t('payment.selectYearly')}
               </button>
             </div>
           </div>
 
           <button onClick={() => setPageState('main')} className="back-btn">
-            返回主页
+            {t('common.backToHome')}
           </button>
         </main>
       </div>
@@ -455,16 +547,45 @@ function App() {
       <header className="header">
         <div className="logo">
           <Youtube size={32} />
-          <h1>YouTube 下载器</h1>
+          <h1>{t('common.appName')}</h1>
         </div>
         <div className="header-right">
+          <LanguageSwitcher />
+          <button
+            onClick={() => setPageState('pricing')}
+            className="nav-pricing-btn"
+          >
+            <CreditCard size={16} />
+            {t('header.pricing')}
+          </button>
           {isAuthenticated ? (
             <>
+              {currentUser?.is_admin && (
+                <button
+                  onClick={() => setPageState('admin')}
+                  className="admin-btn"
+                  style={{
+                    padding: '0.5rem 1rem',
+                    backgroundColor: 'rgba(234, 179, 8, 0.2)',
+                    color: '#facc15',
+                    border: '1px solid rgba(234, 179, 8, 0.3)',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    fontSize: '0.875rem',
+                  }}
+                >
+                  <Shield size={16} />
+                  {t('header.adminPanel')}
+                </button>
+              )}
               {userQuota && currentUser?.is_premium && (
                 <div className="quota-info">
                   <span className="premium-badge">
                     <Zap size={16} />
-                    高级会员
+                    {t('header.premiumMember')}
                   </span>
                 </div>
               )}
@@ -481,7 +602,7 @@ function App() {
               {anonymousQuota && (
                 <div className="quota-info">
                   <span className="quota-badge">
-                    免费剩余: {anonymousQuota.remaining}/3
+                    {t('header.freeRemaining', { count: anonymousQuota.remaining })}
                   </span>
                 </div>
               )}
@@ -501,20 +622,20 @@ function App() {
                 }}
               >
                 <User size={16} />
-                登录/注册
+                {t('auth.loginRegister')}
               </button>
             </>
           )}
           <div className="api-status">
             {isApiHealthy === null ? (
-              <span className="status-checking">检查API...</span>
+              <span className="status-checking">{t('header.apiChecking')}</span>
             ) : isApiHealthy ? (
               <span className="status-healthy">
-                <CheckCircle2 size={16} /> API已连接
+                <CheckCircle2 size={16} /> {t('header.apiConnected')}
               </span>
             ) : (
               <span className="status-unhealthy">
-                <AlertCircle size={16} /> API离线
+                <AlertCircle size={16} /> {t('header.apiOffline')}
               </span>
             )}
           </div>
@@ -524,9 +645,11 @@ function App() {
       <main className="main">
         {appState === 'idle' && (
           <div className="input-section">
-            <h2>获取YouTube直接下载链接</h2>
+            <h2>{t('main.title')}</h2>
             <p className="subtitle">
-              {isAuthenticated ? '注册用户无限次使用' : `免费用户可使用 ${anonymousQuota?.remaining || 3} 次，注册后无限制`}
+              {isAuthenticated 
+                ? (currentUser?.is_premium ? t('main.subtitleAuthenticated') : t('main.subtitlePremium'))
+                : t('main.subtitleFree', { remaining: anonymousQuota?.remaining || 3 })}
             </p>
 
             <form onSubmit={handleSubmit} className="url-form">
@@ -536,7 +659,7 @@ function App() {
                   type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=..."
+                  placeholder={t('main.placeholder')}
                   className="url-input"
                   disabled={!isApiHealthy}
                 />
@@ -544,21 +667,21 @@ function App() {
 
               <div className="options">
                 <div className="resolution-select">
-                  <label htmlFor="resolution">分辨率:</label>
+                  <label htmlFor="resolution">{t('main.resolution')}</label>
                   <select
                     id="resolution"
                     value={resolution}
                     onChange={(e) => setResolution(e.target.value as VideoResolution)}
                     className="resolution-dropdown"
                   >
-                    <option value="360">360p</option>
-                    <option value="480">480p</option>
-                    <option value="720">720p (推荐)</option>
-                    <option value="1080">1080p 全高清</option>
-                    <option value="1440">1440p 2K</option>
-                    <option value="2160">2160p 4K</option>
-                    <option value="best">最佳质量</option>
-                    <option value="audio">仅音频</option>
+                    <option value="360">{t('main.resolution360')}</option>
+                    <option value="480">{t('main.resolution480')}</option>
+                    <option value="720">{t('main.resolution720')}</option>
+                    <option value="1080">{t('main.resolution1080')}</option>
+                    <option value="1440">{t('main.resolution1440')}</option>
+                    <option value="2160">{t('main.resolution2160')}</option>
+                    <option value="best">{t('main.resolutionBest')}</option>
+                    <option value="audio">{t('main.resolutionAudio')}</option>
                   </select>
                 </div>
               </div>
@@ -569,7 +692,7 @@ function App() {
                 disabled={!isApiHealthy || !url.trim()}
               >
                 <Download size={20} />
-                获取下载链接
+                {t('main.getDownloadLink')}
               </button>
             </form>
 
@@ -587,8 +710,8 @@ function App() {
             <div className="processing-icon">
               <Loader2 size={48} className="spinning" />
             </div>
-            <h2>正在提取下载链接...</h2>
-            <p className="progress-text">这可能需要几秒钟</p>
+            <h2>{t('main.extracting')}</h2>
+            <p className="progress-text">{t('main.extractingDesc')}</p>
           </div>
         )}
 
@@ -596,7 +719,7 @@ function App() {
           <div className="result-section">
             <div className="success-header">
               <CheckCircle2 size={48} className="success-icon" />
-              <h2>链接准备就绪！</h2>
+              <h2>{t('main.linksReady')}</h2>
             </div>
 
             <div className="video-info">
@@ -614,20 +737,20 @@ function App() {
                   {formatDuration(result.video_info.duration)}
                 </span>
                 {result.video_info.uploader && (
-                  <span>作者: {result.video_info.uploader}</span>
+                  <span>{t('main.author')}: {result.video_info.uploader}</span>
                 )}
               </div>
             </div>
 
             <div className="download-links">
-              <h4>推荐下载</h4>
+              <h4>{t('main.recommended')}</h4>
               
               {result.download_urls.video_url && (
                 <div className="link-item">
                   <div className="link-header">
                     <Play size={20} />
-                    <span>视频</span>
-                    {renderFormatInfo(result.download_urls.video_format, '格式')}
+                    <span>{t('main.video')}</span>
+                    {renderFormatInfo(result.download_urls.video_format, t('main.format'))}
                   </div>
                   <div className="link-actions">
                     <button
@@ -635,21 +758,22 @@ function App() {
                         if (result.download_urls?.video_url && result.video_info?.title) {
                           handleDownload(
                             result.download_urls.video_url,
-                            `${result.video_info.title}.${result.download_urls.video_format?.ext || 'mp4'}`
+                            `${result.video_info.title}.${result.download_urls.video_format?.ext || 'mp4'}`,
+                            result.download_urls.video_format?.resolution || resolution
                           );
                         }
                       }}
                       className="download-btn video-btn"
                     >
                       <Download size={16} />
-                      下载
+                      {t('common.download')}
                     </button>
                     <button
                       onClick={() => copyToClipboard(result.download_urls!.video_url!, 'video')}
                       className="copy-btn"
                     >
                       <Copy size={16} />
-                      {copiedUrl === 'video' ? '已复制!' : '复制链接'}
+                      {copiedUrl === 'video' ? t('common.copied') : t('main.copyLink')}
                     </button>
                   </div>
                 </div>
@@ -658,12 +782,12 @@ function App() {
 
             {result.extraction_time && (
               <p className="extraction-time">
-                提取用时 {result.extraction_time.toFixed(2)}秒
+                {t('main.extractionTime', { time: result.extraction_time.toFixed(2) })}
               </p>
             )}
 
             <button onClick={handleReset} className="reset-btn">
-              下载另一个视频
+              {t('main.downloadAnother')}
             </button>
           </div>
         )}
@@ -671,17 +795,17 @@ function App() {
         {appState === 'error' && (
           <div className="error-section">
             <AlertCircle size={48} className="error-icon" />
-            <h2>提取失败</h2>
+            <h2>{t('main.extractionFailed')}</h2>
             <p className="error-detail">{error}</p>
             <button onClick={handleReset} className="reset-btn">
-              重试
+              {t('common.retry')}
             </button>
           </div>
         )}
       </main>
 
       <footer className="footer">
-        <p>YouTube 下载器 &copy; 2024 | 免费3次，注册无限制</p>
+        <p>{t('footer.copyright')}</p>
       </footer>
     </div>
   );

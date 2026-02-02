@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 # Development stage
 FROM base as development
@@ -23,6 +23,12 @@ CMD ["npm", "run", "dev"]
 
 # Build stage
 FROM base as builder
+
+# Accept build argument for API URL
+ARG VITE_API_URL=https://u2foru.site
+
+# Set environment variable for build
+ENV VITE_API_URL=${VITE_API_URL}
 
 # Copy source code
 COPY . .

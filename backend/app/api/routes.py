@@ -1059,8 +1059,16 @@ async def extract_direct_urls(
                 logger.warning(f"[{task_id}] Failed to get cookies (attempt {attempt}): {e}")
 
             # Build yt-dlp command
+            # bgutil provides PO Token via http://bgutil:4416
+            import os
+            pot_url = os.environ.get("YT_DLP_POT_PROVIDER_URL", "http://bgutil:4416")
+            logger.info(f"[{task_id}] 🔑 bgutil PO Token provider: {pot_url}")
+            
             cmd = [
                 "yt-dlp",
+                "--js-runtimes", "node",  # Enable Node.js for JS challenge solving
+                "--remote-components", "ejs:github",  # Download JS challenge solver from GitHub
+                "--extractor-args", f"youtubepot-bgutilhttp:base_url={pot_url}",  # Configure bgutil plugin URL
                 "-f", format_str,
                 "--merge-output-format", "mp4",
                 "-o", f"{temp_dir}/%(id)s.%(ext)s",
@@ -1077,11 +1085,51 @@ async def extract_direct_urls(
             else:
                 logger.warning(f"[{task_id}] No cookies available, YouTube may block the request")
 
-            # Add proxy if configured
-            if settings.http_proxy:
+            # Add proxy if configured (check both settings and environment variable)
+            # IMPORTANT: Proxy region must match AgentGo region for cookies to work!
+            import os
+            import re
+            base_proxy_url = settings.http_proxy or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+            
+            if base_proxy_url:
+                # Parse Datasea Gateway proxy URL and replace region to match AgentGo
+                # Format: http://user-region:password@host:port or http://user:password@host:port
+                # We need to change the region part to match the AgentGo region
+                
+                # Extract parts from proxy URL
+                proxy_match = re.match(r'(https?://)([^:]+):([^@]+)@(.+)', base_proxy_url)
+                if proxy_match:
+                    scheme = proxy_match.group(1)
+                    username = proxy_match.group(2)
+                    password = proxy_match.group(3)
+                    host_port = proxy_match.group(4)
+                    
+                    # Remove any existing region suffix from username (e.g., PCTrial-us -> PCTrial)
+                    base_username = re.sub(r'-[a-z]{2}$', '', username)
+                    
+                    # Add the correct region to match AgentGo
+                    # Map AgentGo regions to Datasea regions
+                    datasea_region_map = {
+                        'us': 'us', 'uk': 'uk', 'de': 'de', 'fr': 'fr', 
+                        'jp': 'jp', 'sg': 'sg', 'in': 'in', 'au': 'au', 'ca': 'ca'
+                    }
+                    datasea_region = datasea_region_map.get(region, 'us')
+                    
+                    # Build new proxy URL with matching region
+                    new_username = f"{base_username}-{datasea_region}"
+                    proxy_url = f"{scheme}{new_username}:{password}@{host_port}"
+                    
+                    logger.info(f"[{task_id}] 🌍 Proxy region adjusted to match AgentGo: {region} -> {datasea_region}")
+                else:
+                    # If we can't parse, use as-is
+                    proxy_url = base_proxy_url
+                    logger.warning(f"[{task_id}] Could not parse proxy URL, using as-is")
+                
                 cmd.insert(1, "--proxy")
-                cmd.insert(2, settings.http_proxy)
-                logger.info(f"[{task_id}] Using proxy: {settings.http_proxy}")
+                cmd.insert(2, proxy_url)
+                logger.info(f"[{task_id}] Using proxy: {proxy_url}")
+            else:
+                logger.warning(f"[{task_id}] ⚠️ No proxy configured! YouTube may block requests from server IP")
 
             # Run yt-dlp in subprocess
             loop = asyncio.get_running_loop()
@@ -1418,7 +1466,12 @@ async def extract_via_agentgo(request_data: ExtractURLRequest, request: Request)
 
 
 @router.get("/proxy-download")
-async def proxy_download(url: str, filename: str = "video.mp4"):
+async def proxy_download(
+    url: str, 
+    filename: str = "video.mp4",
+    resolution: str = "unknown",
+    request: Request = None
+):
     """
     Proxy download for Google Video URLs.
 
@@ -1428,9 +1481,12 @@ async def proxy_download(url: str, filename: str = "video.mp4"):
     Args:
         url: The direct Google Video URL
         filename: Desired filename for download
+        resolution: Video resolution (for traffic logging)
     """
     import httpx
     from fastapi.responses import StreamingResponse
+    from app.database import get_database
+    import re
 
     # Validate that it's a googlevideo.com URL for security
     if "googlevideo.com" not in url:
@@ -1438,43 +1494,107 @@ async def proxy_download(url: str, filename: str = "video.mp4"):
             status_code=400, detail="Only googlevideo.com URLs are allowed"
         )
 
+    # Extract video ID from URL for logging
+    video_id = None
     try:
-        # Stream the video from Google servers
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            async with client.stream("GET", url) as response:
-                if response.status_code != 200:
-                    raise HTTPException(
-                        status_code=response.status_code,
-                        detail=f"Failed to fetch video: {response.status_code}",
-                    )
+        match = re.search(r'(?:v=|/)([0-9A-Za-z_-]{11})', url)
+        if match:
+            video_id = match.group(1)
+    except Exception:
+        pass
 
-                # Get content type and length from original response
-                content_type = response.headers.get("content-type", "video/mp4")
-                content_length = response.headers.get("content-length")
+    # Get client IP
+    ip_address = None
+    if request:
+        ip_address = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        if not ip_address:
+            ip_address = request.headers.get("X-Real-IP", request.client.host if request.client else None)
 
-                # Create headers that force download
-                headers = {
-                    "Content-Disposition": f'attachment; filename="{filename}"',
-                    "Content-Type": content_type,
+    # Create httpx client that will be used throughout the streaming
+    client = httpx.AsyncClient(timeout=300.0)
+
+    async def stream_generator():
+        """Generator that streams video content and handles cleanup."""
+        total_bytes_streamed = 0
+        try:
+            async with client.stream(
+                "GET", 
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Referer": "https://www.youtube.com/",
+                    "Origin": "https://www.youtube.com",
                 }
+            ) as response:
+                if response.status_code != 200:
+                    logger.error(f"Proxy download failed with status {response.status_code}")
+                    return
 
-                if content_length:
-                    headers["Content-Length"] = content_length
+                async for chunk in response.aiter_bytes(chunk_size=65536):  # 64KB chunks
+                    total_bytes_streamed += len(chunk)
+                    yield chunk
+                
+                # Log traffic after streaming completes
+                try:
+                    db = get_database()
+                    db.log_proxy_traffic(
+                        request_bytes=0,
+                        response_bytes=total_bytes_streamed,
+                        endpoint="/api/v1/proxy-download",
+                        video_id=video_id,
+                        resolution=resolution,
+                        ip_address=ip_address
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to log proxy traffic: {e}")
 
-                # Stream the response
-                async def stream_generator():
-                    async for chunk in response.aiter_bytes(chunk_size=8192):
-                        yield chunk
+        except httpx.TimeoutException:
+            logger.error("Proxy download timed out")
+        except Exception as e:
+            logger.error(f"Proxy download stream error: {e}")
+        finally:
+            await client.aclose()
 
-                return StreamingResponse(
-                    stream_generator(), headers=headers, media_type=content_type
-                )
-
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Download timed out")
+    # First, make a HEAD request to get content info
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as head_client:
+            head_response = await head_client.head(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Referer": "https://www.youtube.com/",
+                    "Origin": "https://www.youtube.com",
+                },
+                follow_redirects=True
+            )
+            
+            content_type = head_response.headers.get("content-type", "video/mp4")
+            content_length = head_response.headers.get("content-length")
     except Exception as e:
-        logger.error(f"Proxy download failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+        logger.warning(f"HEAD request failed: {e}, using defaults")
+        content_type = "video/mp4"
+        content_length = None
+
+    # Sanitize filename
+    safe_filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.')).strip()
+    if not safe_filename:
+        safe_filename = "video.mp4"
+
+    # Create headers that force download
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_filename}"',
+        "Content-Type": content_type,
+        "Cache-Control": "no-cache",
+    }
+
+    if content_length:
+        headers["Content-Length"] = content_length
+
+    return StreamingResponse(
+        stream_generator(), 
+        headers=headers, 
+        media_type=content_type
+    )
 
 
 @router.post("/extract/direct")
@@ -1574,3 +1694,67 @@ async def extract_direct_urls_only(request_data: ExtractURLRequest, request: Req
             "error_message": str(e),
             "extraction_time": time.time() - start_time,
         }
+
+
+# ============================================================================
+# OSS Storage Management
+# ============================================================================
+
+
+@router.post("/admin/oss/cleanup")
+async def cleanup_oss_storage(
+    max_age_hours: int = 24,
+    prefix: str = "downloads/",
+    dry_run: bool = True
+):
+    """
+    Clean up old files from OSS storage.
+    
+    Args:
+        max_age_hours: Delete files older than this (default: 24 hours)
+        prefix: OSS path prefix to clean (default: "downloads/")
+        dry_run: If True, only list files without deleting (default: True)
+    
+    Returns:
+        Cleanup statistics
+    """
+    try:
+        storage = get_storage()
+        result = await storage.cleanup_old_files(
+            prefix=prefix,
+            max_age_hours=max_age_hours,
+            dry_run=dry_run
+        )
+        return {
+            "success": True,
+            "message": f"Cleanup {'simulation' if dry_run else 'completed'}",
+            **result
+        }
+    except Exception as e:
+        logger.error(f"OSS cleanup failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/oss/list")
+async def list_oss_files(prefix: str = "downloads/", limit: int = 100):
+    """
+    List files in OSS storage.
+    
+    Args:
+        prefix: Path prefix to filter
+        limit: Maximum number of files to return
+    
+    Returns:
+        List of files with metadata
+    """
+    try:
+        storage = get_storage()
+        files = await storage.list_files(prefix=prefix, limit=limit)
+        return {
+            "success": True,
+            "count": len(files),
+            "files": files
+        }
+    except Exception as e:
+        logger.error(f"OSS list failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
