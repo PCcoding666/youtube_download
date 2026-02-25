@@ -176,6 +176,7 @@ export interface UserInfo {
   created_at: string;
   is_premium?: boolean;
   is_admin?: boolean;
+  credit_balance?: number;
 }
 
 export interface AuthResponse {
@@ -268,80 +269,142 @@ export const checkAnonymousQuota = async (): Promise<QuotaInfo | null> => {
   }
 };
 
-// ==================== 支付相关 ====================
+// ==================== Credit 充值相关 ====================
+
+export interface CreditPackage {
+  usd_amount: number;
+  credit_amount: number;
+  label: string;
+}
+
+export interface CreditCheckoutResponse {
+  success: boolean;
+  checkout_url?: string;
+  order_number?: string;
+  sgd_amount: number;
+  credit_amount: number;
+  message: string;
+}
+
+export interface CreditBalance {
+  credit_balance: number;
+  username: string;
+  user_id: number;
+}
+
+export interface CreditTransaction {
+  id: number;
+  type: string;
+  amount: number;
+  balance_after: number;
+  description: string;
+  order_number?: string;
+  video_url?: string;
+  created_at: string;
+}
+
+export interface CreditPackagesInfo {
+  mode: string;
+  currency: string;
+  min_amount: number;
+  suggested_amount: number;
+  credits_per_sgd: number;
+  rate: string;
+  payment_configured: boolean;
+  suggested_amounts: number[];
+}
+
+// 获取充值信息
+export const getCreditPackages = async (): Promise<CreditPackagesInfo> => {
+  const response = await api.get('/api/v1/credits/packages');
+  return response.data;
+};
+
+// 创建充值 Checkout（自定义金额, SGD 整数）
+export const createCreditCheckout = async (sgdAmount: number): Promise<CreditCheckoutResponse> => {
+  const response = await api.post<CreditCheckoutResponse>('/api/v1/credits/checkout', { amount: sgdAmount });
+  return response.data;
+};
+
+// 获取 Credit 余额
+export const getCreditBalance = async (): Promise<CreditBalance> => {
+  const response = await api.get<CreditBalance>('/api/v1/credits/balance');
+  return response.data;
+};
+
+// 获取 Credit 交易记录
+export const getCreditTransactions = async (limit: number = 50): Promise<{ credit_balance: number; transactions: CreditTransaction[] }> => {
+  const response = await api.get(`/api/v1/credits/transactions?limit=${limit}`);
+  return response.data;
+};
+
+// ==================== API Key 管理 ====================
+
+export interface ApiKeyInfo {
+  id: number;
+  key_prefix: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface GenerateKeyResponse {
+  success: boolean;
+  api_key?: string;
+  key_prefix?: string;
+  name: string;
+  message: string;
+}
+
+// 生成 API Key
+export const generateApiKey = async (name?: string): Promise<GenerateKeyResponse> => {
+  const response = await api.post<GenerateKeyResponse>('/api/v1/apikeys/generate', { name });
+  return response.data;
+};
+
+// 列出 API Key
+export const listApiKeys = async (): Promise<{ keys: ApiKeyInfo[]; count: number; max_keys: number }> => {
+  const response = await api.get('/api/v1/apikeys/list');
+  return response.data;
+};
+
+// 删除 API Key
+export const deleteApiKey = async (keyId: number): Promise<{ success: boolean }> => {
+  const response = await api.delete(`/api/v1/apikeys/${keyId}`);
+  return response.data;
+};
+
+// 更新 API Key
+export const updateApiKey = async (keyId: number, data: { name?: string; is_active?: boolean }): Promise<{ success: boolean }> => {
+  const response = await api.put(`/api/v1/apikeys/${keyId}`, data);
+  return response.data;
+};
+
+// ==================== 兼容旧版支付 API ====================
 
 export type PlanType = 'free' | 'basic' | 'pro' | 'unlimited';
 export type BillingCycle = 'monthly' | 'yearly';
-
-export interface PricingPlan {
-  id: PlanType;
-  name: string;
-  monthlyPrice: number;
-  yearlyPrice: number;
-  monthlyDownloads: number;
-  maxResolution: string;
-  features: string[];
-}
-
-export const PRICING_PLANS: Record<PlanType, PricingPlan> = {
-  free: {
-    id: 'free',
-    name: '免费体验',
-    monthlyPrice: 0,
-    yearlyPrice: 0,
-    monthlyDownloads: 3,
-    maxResolution: '720p',
-    features: ['每月3次下载', '720p画质', '基础速度'],
-  },
-  basic: {
-    id: 'basic',
-    name: '基础版',
-    monthlyPrice: 29,
-    yearlyPrice: 290,
-    monthlyDownloads: 50,
-    maxResolution: '1080p',
-    features: ['每月50次下载', '1080p高清', '标准速度', '邮件支持'],
-  },
-  pro: {
-    id: 'pro',
-    name: '专业版',
-    monthlyPrice: 69,
-    yearlyPrice: 690,
-    monthlyDownloads: 200,
-    maxResolution: '4K',
-    features: ['每月200次下载', '4K超清', '高速通道', '优先处理', '批量下载'],
-  },
-  unlimited: {
-    id: 'unlimited',
-    name: '无限版',
-    monthlyPrice: 149,
-    yearlyPrice: 999,
-    monthlyDownloads: -1, // -1 表示无限
-    maxResolution: '4K',
-    features: ['无限次下载', '4K超清', '极速通道', '最高优先', 'API访问', '专属支持'],
-  },
-};
 
 export interface PaymentOrder {
   order_id: string;
   order_number: string;
   amount: number;
   status: string;
-  qr_code_url?: string;
-  plan_type?: PlanType;
-  billing_cycle?: BillingCycle;
 }
 
-// 创建支付订单
-export const createPaymentOrder = async (plan: string, billingCycle: BillingCycle = 'monthly'): Promise<PaymentOrder> => {
-  const response = await api.post<PaymentOrder>('/api/v1/payment/create', { plan, billing_cycle: billingCycle });
-  return response.data;
+// 创建支付订单 (兼容旧版)
+export const createPaymentOrder = async (plan: string, _billingCycle: BillingCycle = 'monthly'): Promise<PaymentOrder> => {
+  // 映射旧版 plan 到充值金额
+  const planToAmount: Record<string, number> = { basic: 5, pro: 10, unlimited: 20 };
+  const amount = planToAmount[plan] || 5;
+  const response = await api.post('/api/v1/credits/checkout', { usd_amount: amount });
+  return { order_id: '', order_number: response.data.order_number || '', amount, status: 'pending' };
 };
 
-// 完成支付
-export const completePayment = async (orderId: string): Promise<{ success: boolean }> => {
-  const response = await api.post<{ success: boolean }>('/api/v1/payment/complete', { order_id: orderId });
-  return response.data;
+// 完成支付 (兼容旧版)
+export const completePayment = async (_orderId: string): Promise<{ success: boolean }> => {
+  return { success: true };
 };
 
 // ==================== 管理员API ====================
@@ -356,7 +419,9 @@ export interface DashboardStats {
   
   // AgentGo 统计
   agentgo_calls_today: number;
+  agentgo_calls_total: number;
   agentgo_success_rate: number;
+  agentgo_success_rate_total: number;
   
   // 流量统计（分类）
   total_traffic_bytes: number;

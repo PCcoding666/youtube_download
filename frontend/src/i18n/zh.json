@@ -60,6 +60,7 @@
     "title": "获取YouTube直接下载链接",
     "subtitleAuthenticated": "高级会员，畅享无限下载",
     "subtitlePremium": "升级套餐解锁更多下载次数",
+    "subtitleCredit": "当前余额 {{credits}} Credits，每次下载消耗 1 Credit (S$1=5 Credits)",
     "subtitleFree": "免费体验 {{remaining}} 次，登录后查看更多套餐",
     "enterYoutubeUrl": "请输入YouTube URL",
     "placeholder": "https://www.youtube.com/watch?v=...",
@@ -240,18 +241,34 @@
       "users": "用户",
       "logs": "日志"
     },
+    "sections": {
+      "todayStats": "今日统计",
+      "totalStats": "累计统计",
+      "realtime": "实时"
+    },
     "overview": {
       "todayDownloads": "今日下载",
+      "weekDownloads": "本周下载",
+      "monthDownloads": "本月下载",
       "agentgoCalls": "AgentGo 调用",
       "successRate": "成功率",
       "totalTraffic": "总流量",
       "totalUsers": "总用户",
       "newToday": "今日新增",
       "activeToday": "今日活跃",
-      "totalDownloads": "总下载",
+      "totalDownloads": "累计下载",
       "trend24h": "24小时下载趋势",
       "geoDistribution": "用户地理分布",
-      "hotCities": "热门城市"
+      "hotCities": "热门城市",
+      "avgDownloadTime": "平均下载时长",
+      "avgFileSize": "平均文件大小",
+      "peakHour": "峰值时段",
+      "todayTraffic": "今日流量",
+      "weekTraffic": "本周流量",
+      "monthTraffic": "本月流量",
+      "downloads": "次下载",
+      "users": "位用户",
+      "requests": "次请求"
     },
     "traffic": {
       "totalTraffic": "总流量",
@@ -261,6 +278,8 @@
       "requestTraffic": "请求流量",
       "responseTraffic": "响应流量",
       "today": "今日",
+      "thisWeek": "本周",
+      "thisMonth": "本月",
       "proxyNote": "含协议开销约10%",
       "agentgoNote": "浏览器页面加载",
       "uniqueVideos": "不同视频数",
@@ -273,6 +292,7 @@
     },
     "agentgo": {
       "totalCalls": "总调用次数",
+      "todayCalls": "今日调用",
       "successfulCalls": "成功次数",
       "failedCalls": "失败次数",
       "successRate": "成功率",
@@ -324,7 +344,53 @@
       "traffic": "流量"
     }
   },
+  "credits": {
+    "heroTag": "按量付费",
+    "heroTitle": "Credit 充值",
+    "heroSubtitle": "S$1 = 5 Credits，每次下载消耗 1 Credit，自定义金额，无需订阅。",
+    "customAmount": "选择充值金额",
+    "rateInfo": "最低 S$1 · 1 SGD = 5 Credits · 需为整数",
+    "invalidAmount": "金额必须为正整数（最低 S$1）",
+    "rechargeNow": "立即充值",
+    "loginToRecharge": "登录后充值",
+    "processing": "处理中...",
+    "pleaseLogin": "请先登录后再充值",
+    "redirecting": "正在跳转到支付页面...",
+    "rechargeSuccess": "充值成功！",
+    "rechargeFailed": "充值失败",
+    "howItWorks": "Credit 使用说明",
+    "step1Title": "充值",
+    "step1Desc": "S$1 = 5 Credits，自定义金额，通过 LemonSqueezy 安全支付。",
+    "step2Title": "下载",
+    "step2Desc": "每次成功下载消耗 1 Credit，下载失败不扣费。",
+    "step3Title": "API 接入",
+    "step3Desc": "生成 API Key 通过程序调用 Skill API，共享 Credit 余额。",
+    "step4Title": "永不过期",
+    "step4Desc": "Credits 永不过期，随用随充，没有月度限制。",
+    "showHistory": "查看交易记录",
+    "hideHistory": "隐藏交易记录",
+    "noTransactions": "暂无交易记录",
+    "footer": "Credits 不可退款，如需帮助请联系客服。"
+  },
+  "apikeys": {
+    "title": "API Key 管理",
+    "subtitle": "生成 API Key 以编程方式调用下载服务",
+    "generateNew": "生成新的 API Key",
+    "keyNamePlaceholder": "Key 名称（可选，如 \"我的应用\"）",
+    "generate": "生成",
+    "keyLimit": "{{used}}/{{max}} 个 Key 已使用",
+    "newKeyGenerated": "新 API Key 已生成！",
+    "saveWarning": "请立即复制并保存此 Key，它不会再次显示！",
+    "yourKeys": "我的 API Keys",
+    "noKeys": "暂无 API Key，请在上方生成。",
+    "confirmDelete": "确定要删除此 API Key 吗？此操作不可撤销。",
+    "generateFailed": "生成 API Key 失败",
+    "deleteFailed": "删除 API Key 失败",
+    "usageGuide": "API 使用指南",
+    "checkBalance": "查询 Credit 余额",
+    "healthCheck": "服务健康检查（无需认证）"
+  },
   "footer": {
-    "copyright": "YouTube 下载器 © 2024 | 灵活套餐，满足各种下载需求"
+    "copyright": "YouTube 下载器 © 2024 | 按量充值，满足各种下载需求"
   }
 }

@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     geoip_db_path: Optional[str] = None
     enable_geo_routing: bool = True
 
+    # LemonSqueezy Payment Configuration
+    lemonsqueezy_api_key: str = ""
+    lemonsqueezy_store_id: str = "260986"
+    lemonsqueezy_webhook_secret: str = "646825"
+    lemonsqueezy_product_id: str = "851698"
+    lemonsqueezy_variant_id: str = "1341888"  # 单一 variant, 通过 custom_price 控制金额
+
     @property
     def youtube_proxy_list(self) -> List[str]:
         """DEPRECATED - kept for backward compatibility."""
@@ -79,7 +86,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000"
 
     class Config:
-        env_file = ".env"
+        env_file = "/home/yt-final/.env"
         env_file_encoding = "utf-8"
         extra = "ignore"
         populate_by_name = True  # Allow both field name and alias

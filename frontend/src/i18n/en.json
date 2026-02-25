@@ -60,6 +60,7 @@
     "title": "Get YouTube Direct Download Links",
     "subtitleAuthenticated": "Premium member, enjoy unlimited downloads",
     "subtitlePremium": "Upgrade your plan to unlock more downloads",
+    "subtitleCredit": "You have {{credits}} credits. Each download costs 1 credit. (S$1 = 5 credits)",
     "subtitleFree": "Free trial {{remaining}} times, login to view more plans",
     "enterYoutubeUrl": "Please enter YouTube URL",
     "placeholder": "https://www.youtube.com/watch?v=...",
@@ -240,18 +241,34 @@
       "users": "Users",
       "logs": "Logs"
     },
+    "sections": {
+      "todayStats": "Today's Stats",
+      "totalStats": "Total Stats",
+      "realtime": "Realtime"
+    },
     "overview": {
       "todayDownloads": "Today's Downloads",
+      "weekDownloads": "This Week",
+      "monthDownloads": "This Month",
       "agentgoCalls": "AgentGo Calls",
       "successRate": "Success Rate",
       "totalTraffic": "Total Traffic",
       "totalUsers": "Total Users",
       "newToday": "New today",
       "activeToday": "Active today",
-      "totalDownloads": "Total downloads",
+      "totalDownloads": "Total Downloads",
       "trend24h": "24-Hour Download Trend",
       "geoDistribution": "User Geographic Distribution",
-      "hotCities": "Hot Cities"
+      "hotCities": "Hot Cities",
+      "avgDownloadTime": "Avg Download Time",
+      "avgFileSize": "Avg File Size",
+      "peakHour": "Peak Hour",
+      "todayTraffic": "Today's Traffic",
+      "weekTraffic": "This Week",
+      "monthTraffic": "This Month",
+      "downloads": "downloads",
+      "users": "users",
+      "requests": "requests"
     },
     "traffic": {
       "totalTraffic": "Total Traffic",
@@ -261,6 +278,8 @@
       "requestTraffic": "Request Traffic",
       "responseTraffic": "Response Traffic",
       "today": "Today",
+      "thisWeek": "This Week",
+      "thisMonth": "This Month",
       "proxyNote": "~10% protocol overhead",
       "agentgoNote": "Browser page load",
       "uniqueVideos": "Unique videos",
@@ -273,6 +292,7 @@
     },
     "agentgo": {
       "totalCalls": "Total Calls",
+      "todayCalls": "Today's Calls",
       "successfulCalls": "Successful Calls",
       "failedCalls": "Failed Calls",
       "successRate": "Success Rate",
@@ -324,7 +344,53 @@
       "traffic": "Traffic"
     }
   },
+  "credits": {
+    "heroTag": "Pay As You Go",
+    "heroTitle": "Credit Recharge",
+    "heroSubtitle": "S$1 = 5 Credits. Each download costs 1 credit. Custom amount, no subscription.",
+    "customAmount": "Choose Amount",
+    "rateInfo": "Min S$1 · 1 SGD = 5 Credits · Integer only",
+    "invalidAmount": "Amount must be a positive integer (min S$1)",
+    "rechargeNow": "Recharge Now",
+    "loginToRecharge": "Login to Recharge",
+    "processing": "Processing...",
+    "pleaseLogin": "Please login first to recharge credits",
+    "redirecting": "Redirecting to payment page...",
+    "rechargeSuccess": "Recharged successfully!",
+    "rechargeFailed": "Recharge failed",
+    "howItWorks": "How Credits Work",
+    "step1Title": "Recharge",
+    "step1Desc": "S$1 = 5 credits. Choose any amount, pay via LemonSqueezy.",
+    "step2Title": "Download",
+    "step2Desc": "Each successful video download costs 1 credit. Failed downloads are free.",
+    "step3Title": "API Access",
+    "step3Desc": "Generate API keys to use credits programmatically via our Skill API.",
+    "step4Title": "No Expiry",
+    "step4Desc": "Credits never expire. Use them whenever you need, no monthly limits.",
+    "showHistory": "Show Transaction History",
+    "hideHistory": "Hide Transaction History",
+    "noTransactions": "No transactions yet",
+    "footer": "Credits are non-refundable. Contact support for assistance."
+  },
+  "apikeys": {
+    "title": "API Key Management",
+    "subtitle": "Generate API keys to use our download service programmatically",
+    "generateNew": "Generate New API Key",
+    "keyNamePlaceholder": "Key name (optional, e.g. \"My App\")",
+    "generate": "Generate",
+    "keyLimit": "{{used}}/{{max}} keys used",
+    "newKeyGenerated": "New API Key Generated!",
+    "saveWarning": "Copy and save this key now. It will not be shown again!",
+    "yourKeys": "Your API Keys",
+    "noKeys": "No API keys yet. Generate one above.",
+    "confirmDelete": "Are you sure you want to delete this API Key? This cannot be undone.",
+    "generateFailed": "Failed to generate API Key",
+    "deleteFailed": "Failed to delete API Key",
+    "usageGuide": "API Usage Guide",
+    "checkBalance": "Check your credit balance",
+    "healthCheck": "Service health check (no auth required)"
+  },
   "footer": {
-    "copyright": "YouTube Downloader © 2024 | Flexible plans for all download needs"
+    "copyright": "YouTube Downloader © 2024 | Pay-as-you-go credits for all download needs"
   }
 }

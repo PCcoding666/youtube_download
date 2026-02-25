@@ -974,17 +974,22 @@ async def extract_direct_urls(
     current_user = await get_current_user_local(authorization)
     
     if current_user:
-        # 已登录用户 - 无限制使用
+        # 已登录用户 - 预扣 credit（防止并发超额）
         user_id = current_user["id"]
-        quota_ok, quota_msg = db.check_and_deduct_quota(user_id)
+        deduct_ok, balance = db.deduct_credit(
+            user_id=user_id,
+            amount=1,
+            description="视频下载（预扣）",
+            video_url=request_data.youtube_url,
+        )
         
-        if not quota_ok:
+        if not deduct_ok:
             raise HTTPException(
                 status_code=402,
-                detail=quota_msg
+                detail=f"Credit 余额不足（当前: {balance}）。请充值后继续使用。S$1 = 5 credits"
             )
         
-        logger.info(f"[{task_id}] User {user_id} ({current_user['username']}) - {quota_msg}")
+        logger.info(f"[{task_id}] User {user_id} ({current_user['username']}) - 预扣1 credit, 余额: {balance}")
     else:
         # 匿名用户 - 基于IP限制3次
         can_use, usage_count = db.check_anonymous_usage(client_ip)
@@ -992,7 +997,7 @@ async def extract_direct_urls(
         if not can_use:
             raise HTTPException(
                 status_code=402,
-                detail=f"免费额度已用完（{usage_count}/3次）。请注册并付费以继续使用。"
+                detail=f"免费额度已用完（{usage_count}/3次）。请注册并充值以继续使用。"
             )
         
         # 增加匿名使用次数
@@ -1264,6 +1269,10 @@ async def extract_direct_urls(
             resolution=resolution,
         )
 
+        # 下载成功 - credit 已在前面预扣，无需再扣
+        if current_user and user_id:
+            logger.info(f"[{task_id}] User {user_id} 下载成功, 预扣的 credit 已生效")
+
         # 记录使用日志到本地数据库
         db.log_usage(
             video_url=request_data.youtube_url,
@@ -1288,6 +1297,10 @@ async def extract_direct_urls(
 
     except subprocess.TimeoutExpired:
         logger.error(f"[{task_id}] Download timed out")
+        # 下载失败 - 退还预扣的 credit
+        if current_user and user_id:
+            db.refund_credit(user_id, 1, "下载超时退还", request_data.youtube_url)
+            logger.info(f"[{task_id}] User {user_id} credit 已退还 (超时)")
         return ExtractURLResponse(
             success=False,
             error_message="Download timed out. Please try again with a shorter video.",
@@ -1298,6 +1311,10 @@ async def extract_direct_urls(
         )
     except Exception as e:
         logger.error(f"[{task_id}] Download failed: {e}")
+        # 下载失败 - 退还预扣的 credit
+        if current_user and user_id:
+            db.refund_credit(user_id, 1, f"下载失败退还: {str(e)[:100]}", request_data.youtube_url)
+            logger.info(f"[{task_id}] User {user_id} credit 已退还 (失败)")
         return ExtractURLResponse(
             success=False,
             error_message=str(e),

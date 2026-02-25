@@ -14,6 +14,9 @@ from app.config import settings
 from app.api.routes import router
 from app.api.auth_routes import router as auth_router
 from app.api.admin_routes import router as admin_router
+from app.api.credit_routes import router as credit_router
+from app.api.apikey_routes import router as apikey_router
+from app.api.skill_routes import router as skill_router
 from app.middleware.logging_middleware import RequestLoggingMiddleware
 from app.utils.ffmpeg_tools import check_ffmpeg_installed, get_ffmpeg_version
 from app.database import get_database
@@ -165,6 +168,9 @@ app.add_middleware(RequestLoggingMiddleware)
 app.include_router(router)
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(credit_router)
+app.include_router(apikey_router)
+app.include_router(skill_router)
 
 
 @app.get("/")

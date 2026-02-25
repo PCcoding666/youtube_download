@@ -1,23 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Youtube,
-  Check,
-  Zap,
-  Crown,
-  Rocket,
-  Gift,
-  ChevronDown,
-  ChevronUp,
   ArrowLeft,
   Sparkles,
-  Shield,
-  Clock,
+  Coins,
   Download,
-  Film,
-  Headphones,
+  CheckCircle2,
+  Clock,
+  History,
+  AlertCircle,
+  ExternalLink,
+  DollarSign,
 } from 'lucide-react';
 import LanguageSwitcher from '../LanguageSwitcher';
+import {
+  getCreditPackages,
+  createCreditCheckout,
+  getCreditBalance,
+  getCreditTransactions,
+} from '../../api';
+import type { CreditTransaction, CreditPackagesInfo } from '../../api';
 
 interface PricingPageProps {
   onBack: () => void;
@@ -26,171 +29,92 @@ interface PricingPageProps {
   currentPlan?: string;
 }
 
-interface PlanFeature {
-  textKey: string;
-  included: boolean;
-  highlight?: boolean;
-}
-
-interface PricingPlan {
-  id: string;
-  nameKey: string;
-  descKey: string;
-  buttonKey: string;
-  monthlyPrice: number;
-  yearlyPrice?: number;
-  features: PlanFeature[];
-  icon: React.ReactNode;
-  popular?: boolean;
-  gradient: string;
-}
-
-function PricingPage({ onBack, onSelectPlan, isAuthenticated, currentPlan }: PricingPageProps) {
+function PricingPage({ onBack, onSelectPlan: _onSelectPlan, isAuthenticated }: PricingPageProps) {
   const { t } = useTranslation();
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
-  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [packagesInfo, setPackagesInfo] = useState<CreditPackagesInfo | null>(null);
+  const [balance, setBalance] = useState<number>(0);
+  const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
+  const [customAmount, setCustomAmount] = useState<number>(10);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
-  const plans: PricingPlan[] = [
-    {
-      id: 'free',
-      nameKey: 'pricing.plans.free.name',
-      descKey: 'pricing.plans.free.description',
-      buttonKey: 'pricing.plans.free.button',
-      monthlyPrice: 0,
-      features: [
-        { textKey: 'pricing.features.downloads3', included: true },
-        { textKey: 'pricing.features.quality720', included: true },
-        { textKey: 'pricing.features.speedBasic', included: true },
-        { textKey: 'pricing.features.supportCommunity', included: true },
-        { textKey: 'pricing.features.no1080p', included: false },
-        { textKey: 'pricing.features.no4k', included: false },
-        { textKey: 'pricing.features.noPriorityQueue', included: false },
-      ],
-      icon: <Gift size={28} />,
-      gradient: 'linear-gradient(135deg, #374151 0%, #1f2937 100%)',
-    },
-    {
-      id: 'basic',
-      nameKey: 'pricing.plans.basic.name',
-      descKey: 'pricing.plans.basic.description',
-      buttonKey: 'pricing.plans.basic.button',
-      monthlyPrice: 29,
-      yearlyPrice: 290,
-      features: [
-        { textKey: 'pricing.features.downloads50', included: true, highlight: true },
-        { textKey: 'pricing.features.quality1080', included: true, highlight: true },
-        { textKey: 'pricing.features.speedStandard', included: true },
-        { textKey: 'pricing.features.supportEmail', included: true },
-        { textKey: 'pricing.features.history', included: true },
-        { textKey: 'pricing.features.no4k', included: false },
-        { textKey: 'pricing.features.noPriorityQueue', included: false },
-      ],
-      icon: <Zap size={28} />,
-      gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-    },
-    {
-      id: 'pro',
-      nameKey: 'pricing.plans.pro.name',
-      descKey: 'pricing.plans.pro.description',
-      buttonKey: 'pricing.plans.pro.button',
-      monthlyPrice: 69,
-      yearlyPrice: 690,
-      features: [
-        { textKey: 'pricing.features.downloads200', included: true, highlight: true },
-        { textKey: 'pricing.features.quality4k', included: true, highlight: true },
-        { textKey: 'pricing.features.speedHigh', included: true, highlight: true },
-        { textKey: 'pricing.features.priorityQueue', included: true },
-        { textKey: 'pricing.features.batch', included: true },
-        { textKey: 'pricing.features.supportPriority', included: true },
-        { textKey: 'pricing.features.history', included: true },
-      ],
-      icon: <Crown size={28} />,
-      popular: true,
-      gradient: 'linear-gradient(135deg, #ff3b3b 0%, #dc2626 100%)',
-    },
-    {
-      id: 'unlimited',
-      nameKey: 'pricing.plans.unlimited.name',
-      descKey: 'pricing.plans.unlimited.description',
-      buttonKey: 'pricing.plans.unlimited.button',
-      monthlyPrice: 149,
-      yearlyPrice: 999,
-      features: [
-        { textKey: 'pricing.features.downloadsUnlimited', included: true, highlight: true },
-        { textKey: 'pricing.features.quality4k', included: true, highlight: true },
-        { textKey: 'pricing.features.speedUltra', included: true, highlight: true },
-        { textKey: 'pricing.features.priorityQueue', included: true },
-        { textKey: 'pricing.features.batch', included: true },
-        { textKey: 'pricing.features.api', included: true },
-        { textKey: 'pricing.features.support1on1', included: true, highlight: true },
-      ],
-      icon: <Rocket size={28} />,
-      gradient: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-    },
-  ];
+  const creditsPerSgd = packagesInfo?.credits_per_sgd || 5;
+  const minAmount = packagesInfo?.min_amount || 1;
+  const suggestedAmounts = packagesInfo?.suggested_amounts || [1, 5, 10, 20, 50];
 
-  const faqs = [
-    { questionKey: 'pricing.faq.q1', answerKey: 'pricing.faq.a1' },
-    { questionKey: 'pricing.faq.q2', answerKey: 'pricing.faq.a2' },
-    { questionKey: 'pricing.faq.q3', answerKey: 'pricing.faq.a3' },
-    { questionKey: 'pricing.faq.q4', answerKey: 'pricing.faq.a4' },
-    { questionKey: 'pricing.faq.q5', answerKey: 'pricing.faq.a5' },
-  ];
+  useEffect(() => {
+    loadPackages();
+    if (isAuthenticated) {
+      loadBalance();
+    }
+  }, [isAuthenticated]);
 
-  const comparisonFeatures = [
-    { nameKey: 'pricing.comparison.monthlyDownloads', free: '3', basic: '50', pro: '200', unlimited: '∞' },
-    { nameKey: 'pricing.comparison.maxQuality', free: '720p', basic: '1080p', pro: '4K', unlimited: '4K' },
-    { nameKey: 'pricing.comparison.downloadSpeed', freeKey: 'pricing.comparison.basic', basicKey: 'pricing.comparison.standard', proKey: 'pricing.comparison.high', unlimitedKey: 'pricing.comparison.ultra' },
-    { nameKey: 'pricing.comparison.priority', free: '—', basic: '—', pro: '✓', unlimitedKey: 'pricing.comparison.highestPriority' },
-    { nameKey: 'pricing.comparison.batchDownload', free: '—', basic: '—', pro: '✓', unlimited: '✓' },
-    { nameKey: 'pricing.comparison.apiAccess', free: '—', basic: '—', pro: '—', unlimited: '✓' },
-    { nameKey: 'pricing.comparison.support', freeKey: 'pricing.comparison.community', basicKey: 'pricing.comparison.email', proKey: 'pricing.comparison.prioritySupport', unlimitedKey: 'pricing.comparison.dedicated' },
-  ];
+  const loadPackages = async () => {
+    try {
+      const data = await getCreditPackages();
+      setPackagesInfo(data);
+      setCustomAmount(data.suggested_amount || 10);
+    } catch {
+      // defaults already set
+    }
+  };
 
-  const handleSelectPlan = (planId: string) => {
-    if (planId === 'free') {
-      onBack();
+  const loadBalance = async () => {
+    try {
+      const data = await getCreditBalance();
+      setBalance(data.credit_balance);
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadTransactions = async () => {
+    try {
+      const data = await getCreditTransactions(20);
+      setTransactions(data.transactions);
+      setBalance(data.credit_balance);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleRecharge = async () => {
+    if (!isAuthenticated) {
+      setError(t('credits.pleaseLogin', 'Please login first to recharge credits'));
       return;
     }
-    onSelectPlan(planId);
-  };
 
-  const getButtonText = (plan: PricingPlan) => {
-    if (currentPlan === plan.id) return t('pricing.currentPlan');
-    if (plan.id === 'free') return t(plan.buttonKey);
-    if (!isAuthenticated) return t('pricing.loginToSubscribe');
-    return t(plan.buttonKey);
-  };
-
-  const getPrice = (plan: PricingPlan) => {
-    if (plan.monthlyPrice === 0) return '¥0';
-    if (billingCycle === 'yearly' && plan.yearlyPrice) {
-      return `¥${plan.yearlyPrice}`;
+    if (customAmount < minAmount || !Number.isInteger(customAmount)) {
+      setError(t('credits.invalidAmount', `Amount must be an integer >= S$${minAmount}`));
+      return;
     }
-    return `¥${plan.monthlyPrice}`;
-  };
 
-  const getPeriod = (plan: PricingPlan) => {
-    if (plan.monthlyPrice === 0) return '/∞';
-    return billingCycle === 'yearly' ? `/${t('common.year')}` : `/${t('common.month')}`;
-  };
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
 
-  const getSavings = (plan: PricingPlan) => {
-    if (!plan.yearlyPrice || plan.monthlyPrice === 0) return null;
-    const yearlyCost = plan.monthlyPrice * 12;
-    const savings = yearlyCost - plan.yearlyPrice;
-    if (savings > 0) {
-      return `${t('payment.save').replace('¥20', '')}¥${savings}`;
+    try {
+      const result = await createCreditCheckout(customAmount);
+      const creditAmount = customAmount * creditsPerSgd;
+
+      if (result.success && result.checkout_url) {
+        // Redirect to LemonSqueezy checkout
+        window.open(result.checkout_url, '_blank');
+        setSuccess(t('credits.redirecting', 'Redirecting to payment page...'));
+      } else if (result.success && !result.checkout_url) {
+        // Dev mode: direct recharge
+        setSuccess(t('credits.rechargeSuccess', `Recharged successfully! +${creditAmount} credits`));
+        await loadBalance();
+      } else {
+        setError(result.message || t('credits.rechargeFailed', 'Recharge failed'));
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || t('credits.rechargeFailed', 'Recharge failed'));
+    } finally {
+      setLoading(false);
     }
-    return null;
-  };
-
-  const getComparisonValue = (feature: any, key: string) => {
-    const valueKey = feature[`${key}Key`];
-    if (valueKey) {
-      return t(valueKey);
-    }
-    return feature[key] || '—';
   };
 
   return (
@@ -200,11 +124,11 @@ function PricingPage({ onBack, onSelectPlan, isAuthenticated, currentPlan }: Pri
         <div className="pricing-header-content">
           <button onClick={onBack} className="back-button">
             <ArrowLeft size={20} />
-            <span>{t('common.back')}</span>
+            <span>{t('common.back', 'Back')}</span>
           </button>
           <div className="pricing-logo">
             <Youtube size={32} />
-            <h1>{t('common.appName')}</h1>
+            <h1>{t('common.appName', 'YT Downloader')}</h1>
           </div>
           <div className="header-spacer">
             <LanguageSwitcher />
@@ -216,201 +140,257 @@ function PricingPage({ onBack, onSelectPlan, isAuthenticated, currentPlan }: Pri
       <section className="pricing-hero">
         <div className="hero-badge">
           <Sparkles size={16} />
-          <span>{t('pricing.heroTag')}</span>
+          <span>{t('credits.heroTag', 'Pay As You Go')}</span>
         </div>
-        <h2 className="hero-title">{t('pricing.heroTitle')}</h2>
+        <h2 className="hero-title">{t('credits.heroTitle', 'Credit Recharge')}</h2>
         <p className="hero-subtitle">
-          {t('pricing.heroSubtitle')}
+          {t('credits.heroSubtitle', 'S$1 = 5 Credits. Each download costs 1 credit. Custom amount, no subscription.')}
         </p>
 
-        {/* Billing Toggle */}
-        <div className="billing-toggle">
-          <button
-            className={`toggle-btn ${billingCycle === 'monthly' ? 'active' : ''}`}
-            onClick={() => setBillingCycle('monthly')}
-          >
-            {t('pricing.monthly')}
-          </button>
-          <button
-            className={`toggle-btn ${billingCycle === 'yearly' ? 'active' : ''}`}
-            onClick={() => setBillingCycle('yearly')}
-          >
-            {t('pricing.yearly')}
-            <span className="discount-badge">{t('pricing.savePercent')}</span>
-          </button>
-        </div>
+        {/* Balance Display */}
+        {isAuthenticated && (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            padding: '1rem 2rem',
+            background: 'rgba(59, 130, 246, 0.15)',
+            borderRadius: '12px',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            marginTop: '1rem',
+          }}>
+            <Coins size={24} style={{ color: '#fbbf24' }} />
+            <span style={{ fontSize: '1.5rem', fontWeight: 700, color: '#fff' }}>
+              {balance}
+            </span>
+            <span style={{ color: 'rgba(255,255,255,0.7)' }}>Credits</span>
+          </div>
+        )}
       </section>
 
-      {/* Pricing Cards */}
-      <section className="pricing-cards-section">
-        <div className="pricing-cards-grid">
-          {plans.map((plan) => (
-            <div
-              key={plan.id}
-              className={`pricing-card ${plan.popular ? 'popular' : ''} ${currentPlan === plan.id ? 'current' : ''}`}
-            >
-              {plan.popular && (
-                <div className="popular-badge">
-                  <Crown size={14} />
-                  {t('pricing.mostPopular')}
-                </div>
-              )}
-              {currentPlan === plan.id && (
-                <div className="current-badge">{t('pricing.currentPlan')}</div>
-              )}
-              
-              <div className="card-icon" style={{ background: plan.gradient }}>
-                {plan.icon}
-              </div>
-              
-              <h3 className="card-title">{t(plan.nameKey)}</h3>
-              <p className="card-description">{t(plan.descKey)}</p>
-              
-              <div className="card-price">
-                <span className="price-amount">{getPrice(plan)}</span>
-                <span className="price-period">{getPeriod(plan)}</span>
-              </div>
-              
-              {billingCycle === 'yearly' && getSavings(plan) && (
-                <div className="savings-badge">{getSavings(plan)}</div>
-              )}
-              
-              <ul className="card-features">
-                {plan.features.map((feature, index) => (
-                  <li
-                    key={index}
-                    className={`feature-item ${!feature.included ? 'disabled' : ''} ${feature.highlight ? 'highlight' : ''}`}
-                  >
-                    <Check size={16} className={feature.included ? 'check-icon' : 'check-icon disabled'} />
-                    <span>{t(feature.textKey)}</span>
-                  </li>
-                ))}
-              </ul>
-              
+      {/* Custom Amount Recharge */}
+      <section style={{ maxWidth: '600px', margin: '0 auto', padding: '0 1.5rem 2rem' }}>
+        <div style={{
+          background: 'rgba(255,255,255,0.03)',
+          borderRadius: '16px',
+          border: '1px solid rgba(255,255,255,0.08)',
+          padding: '2rem',
+        }}>
+          <h3 style={{ color: '#fff', marginBottom: '1.5rem', textAlign: 'center', fontSize: '1.25rem' }}>
+            <DollarSign size={22} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} />
+            {t('credits.customAmount', 'Choose Amount')}
+          </h3>
+
+          {/* Quick amount buttons */}
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: '0.75rem',
+            justifyContent: 'center', marginBottom: '1.5rem',
+          }}>
+            {suggestedAmounts.map((amt) => (
               <button
-                className={`card-button ${plan.popular ? 'popular-btn' : ''}`}
-                style={plan.popular ? { background: plan.gradient } : {}}
-                onClick={() => handleSelectPlan(plan.id)}
-                disabled={currentPlan === plan.id}
+                key={amt}
+                onClick={() => setCustomAmount(amt)}
+                style={{
+                  padding: '0.75rem 1.25rem',
+                  borderRadius: '10px',
+                  border: customAmount === amt
+                    ? '2px solid #3b82f6'
+                    : '1px solid rgba(255,255,255,0.15)',
+                  background: customAmount === amt
+                    ? 'rgba(59, 130, 246, 0.2)'
+                    : 'rgba(255,255,255,0.05)',
+                  color: customAmount === amt ? '#93c5fd' : 'rgba(255,255,255,0.7)',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  fontWeight: customAmount === amt ? 700 : 400,
+                  transition: 'all 0.2s',
+                  minWidth: '80px',
+                }}
               >
-                {getButtonText(plan)}
+                S${amt}
               </button>
-            </div>
-          ))}
+            ))}
+          </div>
+
+          {/* Custom input */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '1rem',
+            justifyContent: 'center', marginBottom: '1rem',
+          }}>
+            <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.125rem', fontWeight: 600 }}>S$</span>
+            <input
+              type="number"
+              min={minAmount}
+              step={1}
+              value={customAmount}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                if (!isNaN(v) && v >= 0) setCustomAmount(v);
+              }}
+              style={{
+                width: '120px', padding: '0.75rem 1rem',
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: '10px', color: '#fff',
+                fontSize: '1.5rem', fontWeight: 700,
+                textAlign: 'center', outline: 'none',
+              }}
+            />
+            <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.875rem' }}>
+              = <strong style={{ color: '#fbbf24', fontSize: '1.125rem' }}>{customAmount * creditsPerSgd}</strong> Credits
+            </span>
+          </div>
+
+          <p style={{
+            textAlign: 'center', color: 'rgba(255,255,255,0.4)',
+            fontSize: '0.8125rem', marginBottom: '1.5rem',
+          }}>
+            {t('credits.rateInfo', `Min S$${minAmount} · 1 SGD = ${creditsPerSgd} Credits · Integer only`)}
+          </p>
+
+          {/* Recharge Button */}
+          <button
+            onClick={handleRecharge}
+            disabled={loading || customAmount < minAmount}
+            style={{
+              width: '100%', padding: '1rem',
+              background: loading ? 'rgba(255,255,255,0.1)' : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+              color: '#fff', border: 'none', borderRadius: '12px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '1.125rem', fontWeight: 700,
+              opacity: loading ? 0.7 : 1,
+              transition: 'all 0.2s',
+            }}
+          >
+            {loading
+              ? t('credits.processing', 'Processing...')
+              : isAuthenticated
+                ? `${t('credits.rechargeNow', 'Recharge Now')} · S$${customAmount} → ${customAmount * creditsPerSgd} Credits`
+                : t('credits.loginToRecharge', 'Login to Recharge')
+            }
+          </button>
         </div>
       </section>
 
-      {/* Features Comparison Table */}
-      <section className="comparison-section">
-        <h3 className="section-title">
-          <Film size={24} />
-          {t('pricing.comparison.title')}
-        </h3>
-        <div className="comparison-table-wrapper">
-          <table className="comparison-table">
-            <thead>
-              <tr>
-                <th>{t('pricing.comparison.feature')}</th>
-                <th>{t('pricing.comparison.free')}</th>
-                <th>{t('pricing.comparison.basic')}</th>
-                <th className="highlight-col">{t('pricing.comparison.pro')}</th>
-                <th>{t('pricing.comparison.unlimited')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {comparisonFeatures.map((feature, index) => (
-                <tr key={index}>
-                  <td className="feature-name">{t(feature.nameKey)}</td>
-                  <td>{getComparisonValue(feature, 'free')}</td>
-                  <td>{getComparisonValue(feature, 'basic')}</td>
-                  <td className="highlight-col">{getComparisonValue(feature, 'pro')}</td>
-                  <td>{getComparisonValue(feature, 'unlimited')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Messages */}
+      {error && (
+        <div style={{
+          maxWidth: '600px', margin: '0 auto 2rem', padding: '1rem',
+          background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)',
+          borderRadius: '8px', color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '0.5rem',
+        }}>
+          <AlertCircle size={20} />
+          {error}
         </div>
-      </section>
+      )}
+      {success && (
+        <div style={{
+          maxWidth: '600px', margin: '0 auto 2rem', padding: '1rem',
+          background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)',
+          borderRadius: '8px', color: '#86efac', display: 'flex', alignItems: 'center', gap: '0.5rem',
+        }}>
+          <CheckCircle2 size={20} />
+          {success}
+        </div>
+      )}
 
-      {/* Features Highlights */}
+      {/* How it works */}
       <section className="highlights-section">
         <h3 className="section-title">
-          <Shield size={24} />
-          {t('pricing.highlights.title')}
+          <Download size={24} />
+          {t('credits.howItWorks', 'How Credits Work')}
         </h3>
         <div className="highlights-grid">
           <div className="highlight-card">
-            <div className="highlight-icon">
-              <Download size={32} />
-            </div>
-            <h4>{t('pricing.highlights.speed.title')}</h4>
-            <p>{t('pricing.highlights.speed.desc')}</p>
+            <div className="highlight-icon"><Coins size={32} /></div>
+            <h4>{t('credits.step1Title', 'Recharge')}</h4>
+            <p>{t('credits.step1Desc', 'S$1 = 5 credits. Custom amount, pay via LemonSqueezy.')}</p>
           </div>
           <div className="highlight-card">
-            <div className="highlight-icon">
-              <Film size={32} />
-            </div>
-            <h4>{t('pricing.highlights.quality.title')}</h4>
-            <p>{t('pricing.highlights.quality.desc')}</p>
+            <div className="highlight-icon"><Download size={32} /></div>
+            <h4>{t('credits.step2Title', 'Download')}</h4>
+            <p>{t('credits.step2Desc', 'Each successful video download costs 1 credit. Failed downloads are free.')}</p>
           </div>
           <div className="highlight-card">
-            <div className="highlight-icon">
-              <Headphones size={32} />
-            </div>
-            <h4>{t('pricing.highlights.audio.title')}</h4>
-            <p>{t('pricing.highlights.audio.desc')}</p>
+            <div className="highlight-icon"><ExternalLink size={32} /></div>
+            <h4>{t('credits.step3Title', 'API Access')}</h4>
+            <p>{t('credits.step3Desc', 'Generate API keys to use credits programmatically via our Skill API.')}</p>
           </div>
           <div className="highlight-card">
-            <div className="highlight-icon">
-              <Clock size={32} />
-            </div>
-            <h4>{t('pricing.highlights.processing.title')}</h4>
-            <p>{t('pricing.highlights.processing.desc')}</p>
+            <div className="highlight-icon"><Clock size={32} /></div>
+            <h4>{t('credits.step4Title', 'No Expiry')}</h4>
+            <p>{t('credits.step4Desc', 'Credits never expire. Use them whenever you need, no monthly limits.')}</p>
           </div>
         </div>
       </section>
 
-      {/* FAQ Section */}
-      <section className="faq-section">
-        <h3 className="section-title">
-          <Sparkles size={24} />
-          {t('pricing.faq.title')}
-        </h3>
-        <div className="faq-list">
-          {faqs.map((faq, index) => (
-            <div
-              key={index}
-              className={`faq-item ${expandedFaq === index ? 'expanded' : ''}`}
-            >
-              <button
-                className="faq-question"
-                onClick={() => setExpandedFaq(expandedFaq === index ? null : index)}
-              >
-                <span>{t(faq.questionKey)}</span>
-                {expandedFaq === index ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-              </button>
-              <div className="faq-answer">
-                <p>{t(faq.answerKey)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="cta-section">
-        <div className="cta-content">
-          <h3>{t('pricing.cta.title')}</h3>
-          <p>{t('pricing.cta.desc')}</p>
-          <button className="cta-button" onClick={onBack}>
-            {t('pricing.cta.button')}
+      {/* Transaction History */}
+      {isAuthenticated && (
+        <section style={{ maxWidth: '800px', margin: '0 auto', padding: '0 1.5rem 3rem' }}>
+          <button
+            onClick={() => {
+              setShowHistory(!showHistory);
+              if (!showHistory) loadTransactions();
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+              color: '#fff', padding: '0.75rem 1.5rem', borderRadius: '8px',
+              cursor: 'pointer', fontSize: '1rem', margin: '0 auto',
+            }}
+          >
+            <History size={20} />
+            {showHistory
+              ? t('credits.hideHistory', 'Hide Transaction History')
+              : t('credits.showHistory', 'Show Transaction History')}
           </button>
-        </div>
-      </section>
+
+          {showHistory && (
+            <div style={{ marginTop: '1rem' }}>
+              {transactions.length === 0 ? (
+                <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
+                  {t('credits.noTransactions', 'No transactions yet')}
+                </p>
+              ) : (
+                <div style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  overflow: 'hidden',
+                }}>
+                  {transactions.map((tx) => (
+                    <div key={tx.id} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '0.75rem 1rem',
+                      borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    }}>
+                      <div>
+                        <span style={{
+                          color: tx.amount > 0 ? '#86efac' : '#fca5a5',
+                          fontWeight: 600,
+                          marginRight: '0.75rem',
+                        }}>
+                          {tx.amount > 0 ? '+' : ''}{tx.amount}
+                        </span>
+                        <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.875rem' }}>
+                          {tx.description}
+                        </span>
+                      </div>
+                      <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>
+                        {new Date(tx.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Footer */}
       <footer className="pricing-footer">
-        <p>{t('pricing.footer')}</p>
+        <p>{t('credits.footer', 'Credits are non-refundable. Contact support for assistance.')}</p>
       </footer>
     </div>
   );

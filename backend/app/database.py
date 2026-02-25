@@ -44,6 +44,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_premium = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)  # 管理员标识
+    credit_balance = Column(Integer, default=0)  # Credit 余额
 
 
 class Session(Base):
@@ -94,17 +95,48 @@ class UsageLog(Base):
 
 
 class PaymentOrder(Base):
-    """付费订单表"""
+    """付费订单表 - 充值订单"""
     __tablename__ = "payment_orders"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, nullable=False, index=True)
     order_number = Column(String(100), unique=True, nullable=False, index=True)
-    amount = Column(Float, nullable=False)
-    plan_type = Column(String(20), nullable=False)  # monthly, yearly
+    amount = Column(Float, nullable=False)  # USD 金额
+    credit_amount = Column(Integer, default=0)  # 充值的 credit 数量
+    plan_type = Column(String(20), nullable=False, default="credit")  # credit (保留兼容)
     status = Column(String(20), default="pending")  # pending, paid, failed
+    lemon_order_id = Column(String(100), nullable=True, index=True)  # LemonSqueezy 订单 ID
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     paid_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class CreditTransaction(Base):
+    """Credit 交易记录表"""
+    __tablename__ = "credit_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    type = Column(String(20), nullable=False, index=True)  # recharge, consume, refund
+    amount = Column(Integer, nullable=False)  # 正数=增加, 负数=扣除
+    balance_after = Column(Integer, nullable=False)  # 交易后余额
+    description = Column(String(500), nullable=True)
+    order_number = Column(String(100), nullable=True, index=True)  # 关联充值订单号
+    video_url = Column(Text, nullable=True)  # 关联的视频 URL（消费时）
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class UserApiKey(Base):
+    """用户 API Key 表"""
+    __tablename__ = "user_api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    key_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA256 哈希
+    key_prefix = Column(String(8), nullable=False)  # 前8位明文，用于显示
+    name = Column(String(100), nullable=True)  # 用户自定义名称
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
 
 
 # ============================================================================
@@ -311,6 +343,7 @@ class Database:
                     "is_active": user.is_active,
                     "is_premium": user.is_premium,
                     "is_admin": user.is_admin,
+                    "credit_balance": user.credit_balance,
                 }
             return None
 
@@ -359,6 +392,7 @@ class Database:
                     "is_active": user.is_active,
                     "is_premium": user.is_premium,
                     "is_admin": user.is_admin,
+                    "credit_balance": user.credit_balance,
                 }
             return None
 
@@ -507,9 +541,472 @@ class Database:
                     "is_premium": user.is_premium,
                     "is_admin": user.is_admin,
                     "created_at": user.created_at,
+                    "credit_balance": user.credit_balance,
                 }
             return None
 
+        finally:
+            session.close()
+
+    # ========================================================================
+    # Credit 管理
+    # ========================================================================
+
+    def get_credit_balance(self, user_id: int) -> int:
+        """获取用户 credit 余额"""
+        session = self.get_session()
+        try:
+            user = session.query(User).filter(User.id == user_id).first()
+            return user.credit_balance if user else 0
+        finally:
+            session.close()
+
+    def add_credits(self, user_id: int, amount: int, description: str = "",
+                    order_number: Optional[str] = None) -> tuple[bool, int]:
+        """
+        增加用户 credit
+
+        Returns:
+            (成功与否, 交易后余额)
+        """
+        session = self.get_session()
+        try:
+            user = session.query(User).filter(User.id == user_id).with_for_update().first()
+            if not user:
+                return False, 0
+
+            user.credit_balance += amount
+            new_balance = user.credit_balance
+
+            # 记录交易
+            tx = CreditTransaction(
+                user_id=user_id,
+                type="recharge",
+                amount=amount,
+                balance_after=new_balance,
+                description=description,
+                order_number=order_number,
+            )
+            session.add(tx)
+            session.commit()
+
+            logger.info(f"用户 {user_id} 充值 {amount} credits, 余额: {new_balance}")
+            return True, new_balance
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"增加 credit 失败: {e}")
+            return False, 0
+        finally:
+            session.close()
+
+    def deduct_credit(self, user_id: int, amount: int = 1, description: str = "",
+                      video_url: Optional[str] = None) -> tuple[bool, int]:
+        """
+        扣除用户 credit（下载前预扣）
+
+        Returns:
+            (成功与否, 交易后余额)
+        """
+        session = self.get_session()
+        try:
+            user = session.query(User).filter(User.id == user_id).with_for_update().first()
+            if not user:
+                return False, 0
+
+            if user.credit_balance < amount:
+                return False, user.credit_balance
+
+            user.credit_balance -= amount
+            new_balance = user.credit_balance
+
+            # 记录交易
+            tx = CreditTransaction(
+                user_id=user_id,
+                type="consume",
+                amount=-amount,
+                balance_after=new_balance,
+                description=description or "视频下载",
+                video_url=video_url,
+            )
+            session.add(tx)
+            session.commit()
+
+            logger.info(f"用户 {user_id} 消耗 {amount} credit, 余额: {new_balance}")
+            return True, new_balance
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"扣除 credit 失败: {e}")
+            return False, 0
+        finally:
+            session.close()
+
+    def refund_credit(self, user_id: int, amount: int = 1, description: str = "",
+                      video_url: Optional[str] = None) -> tuple[bool, int]:
+        """
+        退还用户 credit（下载失败时调用）
+
+        Returns:
+            (成功与否, 交易后余额)
+        """
+        session = self.get_session()
+        try:
+            user = session.query(User).filter(User.id == user_id).with_for_update().first()
+            if not user:
+                return False, 0
+
+            user.credit_balance += amount
+            new_balance = user.credit_balance
+
+            # 记录交易
+            tx = CreditTransaction(
+                user_id=user_id,
+                type="refund",
+                amount=amount,
+                balance_after=new_balance,
+                description=description or "下载失败退还",
+                video_url=video_url,
+            )
+            session.add(tx)
+            session.commit()
+
+            logger.info(f"用户 {user_id} 退还 {amount} credit, 余额: {new_balance}")
+            return True, new_balance
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"退还 credit 失败: {e}")
+            return False, 0
+        finally:
+            session.close()
+
+    def check_credit(self, user_id: int, required: int = 1) -> tuple[bool, int]:
+        """
+        检查用户是否有足够的 credit
+
+        Returns:
+            (是否足够, 当前余额)
+        """
+        balance = self.get_credit_balance(user_id)
+        return balance >= required, balance
+
+    def get_credit_transactions(self, user_id: int, limit: int = 50,
+                                offset: int = 0) -> List[Dict[str, Any]]:
+        """获取用户 credit 交易记录"""
+        session = self.get_session()
+        try:
+            txs = session.query(CreditTransaction).filter(
+                CreditTransaction.user_id == user_id
+            ).order_by(CreditTransaction.created_at.desc()).offset(offset).limit(limit).all()
+
+            return [
+                {
+                    "id": tx.id,
+                    "type": tx.type,
+                    "amount": tx.amount,
+                    "balance_after": tx.balance_after,
+                    "description": tx.description,
+                    "order_number": tx.order_number,
+                    "video_url": tx.video_url,
+                    "created_at": tx.created_at,
+                }
+                for tx in txs
+            ]
+        finally:
+            session.close()
+
+    def create_credit_order(self, user_id: int, usd_amount: float, credit_amount: int) -> str:
+        """创建充值订单"""
+        session = self.get_session()
+        try:
+            order_number = f"CRD{datetime.now().strftime('%Y%m%d%H%M%S')}{secrets.token_hex(4)}"
+
+            order = PaymentOrder(
+                user_id=user_id,
+                order_number=order_number,
+                amount=usd_amount,
+                credit_amount=credit_amount,
+                plan_type="credit",
+            )
+            session.add(order)
+            session.commit()
+
+            return order_number
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"创建充值订单失败: {e}")
+            raise
+        finally:
+            session.close()
+
+    def complete_credit_order(self, order_number: str,
+                              lemon_order_id: Optional[str] = None) -> tuple[bool, int]:
+        """
+        完成充值订单 (Webhook 回调时调用)
+
+        Returns:
+            (成功与否, 充值的 credit 数量)
+        """
+        session = self.get_session()
+        try:
+            order = session.query(PaymentOrder).filter(
+                PaymentOrder.order_number == order_number
+            ).first()
+
+            if not order or order.status == "paid":
+                return False, 0
+
+            order.status = "paid"
+            order.paid_at = datetime.now()
+            if lemon_order_id:
+                order.lemon_order_id = lemon_order_id
+
+            session.commit()
+
+            # 增加 credit
+            credit_amount = order.credit_amount or int(order.amount * 5)
+            success, balance = self.add_credits(
+                user_id=order.user_id,
+                amount=credit_amount,
+                description=f"充值 ${order.amount} = {credit_amount} credits",
+                order_number=order_number,
+            )
+
+            return success, credit_amount
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"完成充值订单失败: {e}")
+            return False, 0
+        finally:
+            session.close()
+
+    def complete_credit_order_by_lemon_id(self, lemon_order_id: str,
+                                           user_email: str,
+                                           usd_amount: float) -> tuple[bool, int]:
+        """
+        通过 LemonSqueezy 订单 ID 完成充值（Webhook 直接调用）
+        如果没有预创建的订单，则自动创建并完成。
+
+        Returns:
+            (成功与否, 充值的 credit 数量)
+        """
+        session = self.get_session()
+        try:
+            # 检查是否已处理过
+            existing = session.query(PaymentOrder).filter(
+                PaymentOrder.lemon_order_id == lemon_order_id
+            ).first()
+            if existing and existing.status == "paid":
+                return False, 0  # 已处理，防止重复
+
+            # 找到用户
+            user = session.query(User).filter(User.email == user_email).first()
+            if not user:
+                logger.error(f"Webhook: 用户不存在 email={user_email}")
+                return False, 0
+
+            credit_amount = int(usd_amount * 5)  # $1 = 5 credits
+
+            if existing:
+                # 有预创建的订单，完成它
+                existing.status = "paid"
+                existing.paid_at = datetime.now()
+                existing.lemon_order_id = lemon_order_id
+                session.commit()
+                success, balance = self.add_credits(
+                    user_id=user.id,
+                    amount=credit_amount,
+                    description=f"充值 ${usd_amount} = {credit_amount} credits",
+                    order_number=existing.order_number,
+                )
+                return success, credit_amount
+            else:
+                # 没有预创建的订单（直接从 LemonSqueezy 购买），自动创建
+                order_number = f"CRD{datetime.now().strftime('%Y%m%d%H%M%S')}{secrets.token_hex(4)}"
+                order = PaymentOrder(
+                    user_id=user.id,
+                    order_number=order_number,
+                    amount=usd_amount,
+                    credit_amount=credit_amount,
+                    plan_type="credit",
+                    status="paid",
+                    paid_at=datetime.now(),
+                    lemon_order_id=lemon_order_id,
+                )
+                session.add(order)
+                session.commit()
+
+                success, balance = self.add_credits(
+                    user_id=user.id,
+                    amount=credit_amount,
+                    description=f"充值 ${usd_amount} = {credit_amount} credits",
+                    order_number=order_number,
+                )
+                return success, credit_amount
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"通过 LemonSqueezy 完成充值失败: {e}")
+            return False, 0
+        finally:
+            session.close()
+
+    # ========================================================================
+    # API Key 管理
+    # ========================================================================
+
+    def generate_api_key(self, user_id: int, name: Optional[str] = None) -> Optional[str]:
+        """
+        生成新的 API Key
+
+        Returns:
+            明文 API Key (仅此一次返回) 或 None
+        """
+        session = self.get_session()
+        try:
+            # 生成随机 key: sk-yt-{random}
+            raw_key = f"sk-yt-{secrets.token_urlsafe(32)}"
+            key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+            key_prefix = raw_key[:12]  # "sk-yt-XXXX"
+
+            api_key = UserApiKey(
+                user_id=user_id,
+                key_hash=key_hash,
+                key_prefix=key_prefix,
+                name=name or "Default",
+            )
+            session.add(api_key)
+            session.commit()
+
+            logger.info(f"为用户 {user_id} 生成 API Key: {key_prefix}...")
+            return raw_key
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"生成 API Key 失败: {e}")
+            return None
+        finally:
+            session.close()
+
+    def verify_api_key(self, raw_key: str) -> Optional[Dict[str, Any]]:
+        """
+        验证 API Key 并返回关联的用户信息和余额
+
+        Returns:
+            用户信息字典或 None
+        """
+        session = self.get_session()
+        try:
+            key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+
+            api_key = session.query(UserApiKey).filter(
+                UserApiKey.key_hash == key_hash,
+                UserApiKey.is_active == True,
+            ).first()
+
+            if not api_key:
+                return None
+
+            # 更新最后使用时间
+            api_key.last_used_at = datetime.now()
+            session.commit()
+
+            # 获取用户信息
+            user = session.query(User).filter(User.id == api_key.user_id).first()
+            if not user or not user.is_active:
+                return None
+
+            return {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "credit_balance": user.credit_balance,
+                "is_active": user.is_active,
+                "api_key_id": api_key.id,
+                "api_key_name": api_key.name,
+            }
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"验证 API Key 失败: {e}")
+            return None
+        finally:
+            session.close()
+
+    def list_api_keys(self, user_id: int) -> List[Dict[str, Any]]:
+        """获取用户所有 API Key（仅显示前缀）"""
+        session = self.get_session()
+        try:
+            keys = session.query(UserApiKey).filter(
+                UserApiKey.user_id == user_id
+            ).order_by(UserApiKey.created_at.desc()).all()
+
+            return [
+                {
+                    "id": key.id,
+                    "key_prefix": key.key_prefix,
+                    "name": key.name,
+                    "is_active": key.is_active,
+                    "created_at": key.created_at,
+                    "last_used_at": key.last_used_at,
+                }
+                for key in keys
+            ]
+        finally:
+            session.close()
+
+    def delete_api_key(self, key_id: int, user_id: int) -> bool:
+        """删除 API Key"""
+        session = self.get_session()
+        try:
+            key = session.query(UserApiKey).filter(
+                UserApiKey.id == key_id,
+                UserApiKey.user_id == user_id,
+            ).first()
+
+            if not key:
+                return False
+
+            session.delete(key)
+            session.commit()
+            return True
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"删除 API Key 失败: {e}")
+            return False
+        finally:
+            session.close()
+
+    def update_api_key(self, key_id: int, user_id: int,
+                       name: Optional[str] = None,
+                       is_active: Optional[bool] = None) -> bool:
+        """更新 API Key 名称或状态"""
+        session = self.get_session()
+        try:
+            key = session.query(UserApiKey).filter(
+                UserApiKey.id == key_id,
+                UserApiKey.user_id == user_id,
+            ).first()
+
+            if not key:
+                return False
+
+            if name is not None:
+                key.name = name
+            if is_active is not None:
+                key.is_active = is_active
+
+            session.commit()
+            return True
+
+        except Exception as e:
+            session.rollback()
+            logger.error(f"更新 API Key 失败: {e}")
+            return False
         finally:
             session.close()
 

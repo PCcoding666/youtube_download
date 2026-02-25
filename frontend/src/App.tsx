@@ -14,8 +14,9 @@ import {
   User,
   LogOut,
   CreditCard,
-  Zap,
   Shield,
+  Key,
+  Coins,
 } from 'lucide-react';
 import {
   extractDirectURLs,
@@ -25,22 +26,22 @@ import {
   logout,
   getCurrentUser,
   getUserQuota,
-  createPaymentOrder,
-  completePayment,
+  getCreditBalance,
   getAuthToken,
   checkAnonymousQuota,
 } from './api';
 import type { ExtractURLResponse, VideoResolution, VideoFormatInfo, UserInfo, RegisterRequest, LoginRequest } from './api';
 import AdminDashboard from './components/admin/AdminDashboard';
 import PricingPage from './components/pricing/PricingPage';
+import ApiKeyManager from './components/apikeys/ApiKeyManager';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import './App.css';
 
 type AppState = 'idle' | 'extracting' | 'completed' | 'error';
 type AuthState = 'login' | 'register';
-type PageState = 'main' | 'payment' | 'auth' | 'admin' | 'pricing';
+type PageState = 'main' | 'payment' | 'auth' | 'admin' | 'pricing' | 'apikeys';
 
-const VALID_PAGES: PageState[] = ['main', 'payment', 'auth', 'admin', 'pricing'];
+const VALID_PAGES: PageState[] = ['main', 'payment', 'auth', 'admin', 'pricing', 'apikeys'];
 
 // 从 URL 参数获取初始页面状态
 function getInitialPageState(): PageState {
@@ -77,7 +78,8 @@ function App() {
   const [authState, setAuthState] = useState<AuthState>('login');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserInfo | null>(null);
-  const [userQuota, setUserQuota] = useState<any>(null);
+  const [_userQuota, setUserQuota] = useState<any>(null);
+  const [creditBalance, setCreditBalance] = useState<number>(0);
 
   // 匿名配额
   const [anonymousQuota, setAnonymousQuota] = useState<any>(null);
@@ -123,6 +125,15 @@ function App() {
 
       const quota = await getUserQuota();
       setUserQuota(quota);
+
+      // 加载 credit 余额
+      try {
+        const balance = await getCreditBalance();
+        setCreditBalance(balance.credit_balance);
+      } catch {
+        // 如果 credit 余额 API 还没有数据，使用 user 返回的
+        setCreditBalance((user as any)?.credit_balance || 0);
+      }
     } catch (err) {
       console.error('Failed to load user data:', err);
       setIsAuthenticated(false);
@@ -233,9 +244,9 @@ function App() {
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || err.message || t('main.extractionFailed');
       
-      // 检查是否是配额用完的错误
+      // 检查是否是 credit 不足的错误
       if (err.response?.status === 402) {
-        setPageState(isAuthenticated ? 'payment' : 'auth');
+        setPageState(isAuthenticated ? 'pricing' : 'auth');
         setError(errorMessage);
       } else {
         setError(errorMessage);
@@ -311,28 +322,6 @@ function App() {
         </span>
       </div>
     );
-  };
-
-  const handlePayment = async (planType: 'monthly' | 'yearly') => {
-    if (!isAuthenticated) {
-      setError(t('payment.pleaseLogin'));
-      return;
-    }
-
-    try {
-      const order = await createPaymentOrder(planType);
-      
-      // 模拟支付成功
-      const result = await completePayment(order.order_number);
-      
-      if (result.success) {
-        alert(t('payment.paymentSuccess'));
-        await loadUserData();
-        setPageState('main');
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.detail || t('payment.paymentFailed'));
-    }
   };
 
   // 渲染登录/注册页面
@@ -444,100 +433,29 @@ function App() {
     return <AdminDashboard onBack={() => setPageState('main')} />;
   }
 
-  // 渲染定价页面
-  if (pageState === 'pricing') {
+  // 渲染定价/充值页面
+  if (pageState === 'pricing' || pageState === 'payment') {
     return (
       <PricingPage
         onBack={() => setPageState('main')}
-        onSelectPlan={(plan) => {
+        onSelectPlan={() => {
           if (!isAuthenticated) {
             setPageState('auth');
-          } else {
-            handlePayment(plan as 'monthly' | 'yearly');
           }
         }}
         isAuthenticated={isAuthenticated}
-        currentPlan={currentUser?.is_premium ? 'pro' : 'free'}
+        currentPlan={undefined}
       />
     );
   }
 
-  // 渲染付费页面
-  if (pageState === 'payment') {
+  // 渲染 API Key 管理页面
+  if (pageState === 'apikeys' && isAuthenticated) {
     return (
-      <div className="app">
-        <header className="header">
-          <div className="logo">
-            <Youtube size={32} />
-            <h1>{t('common.appName')}</h1>
-          </div>
-          <div className="header-right">
-            <LanguageSwitcher />
-            <div className="user-info">
-              <User size={20} />
-              <span>{currentUser?.username}</span>
-              <button onClick={handleLogout} className="logout-btn">
-                <LogOut size={16} />
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <main className="main payment-page">
-          <div className="payment-header">
-            <CreditCard size={48} />
-            <h2>{t('payment.upgradeTitle')}</h2>
-            <p>{t('payment.upgradeDesc')}</p>
-          </div>
-
-          <div className="pricing-cards">
-            <div className="pricing-card">
-              <div className="plan-header">
-                <h3>{t('payment.monthlyPlan')}</h3>
-                <div className="price">
-                  <span className="amount">¥9.99</span>
-                  <span className="period">{t('payment.perMonth')}</span>
-                </div>
-              </div>
-              <ul className="features">
-                <li><CheckCircle2 size={16} /> {t('payment.features.unlimited')}</li>
-                <li><CheckCircle2 size={16} /> {t('payment.features.allResolutions')}</li>
-                <li><CheckCircle2 size={16} /> {t('payment.features.highSpeed')}</li>
-                <li><CheckCircle2 size={16} /> {t('payment.features.noAds')}</li>
-              </ul>
-              <button onClick={() => handlePayment('monthly')} className="plan-btn">
-                {t('payment.selectMonthly')}
-              </button>
-            </div>
-
-            <div className="pricing-card featured">
-              <div className="badge">{t('payment.bestValue')}</div>
-              <div className="plan-header">
-                <h3>{t('payment.yearlyPlan')}</h3>
-                <div className="price">
-                  <span className="amount">¥99.99</span>
-                  <span className="period">{t('payment.perYear')}</span>
-                </div>
-                <div className="save-badge">{t('payment.save')}</div>
-              </div>
-              <ul className="features">
-                <li><Zap size={16} /> {t('payment.features.unlimited')}</li>
-                <li><Zap size={16} /> {t('payment.features.allResolutions')}</li>
-                <li><Zap size={16} /> {t('payment.features.highSpeed')}</li>
-                <li><Zap size={16} /> {t('payment.features.noAds')}</li>
-                <li><Zap size={16} /> {t('payment.features.prioritySupport')}</li>
-              </ul>
-              <button onClick={() => handlePayment('yearly')} className="plan-btn featured-btn">
-                {t('payment.selectYearly')}
-              </button>
-            </div>
-          </div>
-
-          <button onClick={() => setPageState('main')} className="back-btn">
-            {t('common.backToHome')}
-          </button>
-        </main>
-      </div>
+      <ApiKeyManager
+        onBack={() => setPageState('main')}
+        creditBalance={creditBalance}
+      />
     );
   }
 
@@ -581,14 +499,32 @@ function App() {
                   {t('header.adminPanel')}
                 </button>
               )}
-              {userQuota && currentUser?.is_premium && (
-                <div className="quota-info">
-                  <span className="premium-badge">
-                    <Zap size={16} />
-                    {t('header.premiumMember')}
-                  </span>
-                </div>
-              )}
+              {/* Credit Balance */}
+              <div className="quota-info" style={{ cursor: 'pointer' }} onClick={() => setPageState('pricing')}>
+                <span className="premium-badge" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <Coins size={16} style={{ color: '#fbbf24' }} />
+                  {creditBalance} Credits
+                </span>
+              </div>
+              {/* API Key Button */}
+              <button
+                onClick={() => setPageState('apikeys')}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                  color: '#93c5fd',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.875rem',
+                }}
+              >
+                <Key size={16} />
+                API Keys
+              </button>
               <div className="user-info">
                 <User size={20} />
                 <span>{currentUser?.username}</span>
@@ -648,7 +584,7 @@ function App() {
             <h2>{t('main.title')}</h2>
             <p className="subtitle">
               {isAuthenticated 
-                ? (currentUser?.is_premium ? t('main.subtitleAuthenticated') : t('main.subtitlePremium'))
+                ? t('main.subtitleCredit', { credits: creditBalance }).replace('{{credits}}', String(creditBalance)) || `You have ${creditBalance} credits. Each download costs 1 credit.`
                 : t('main.subtitleFree', { remaining: anonymousQuota?.remaining || 3 })}
             </p>
 

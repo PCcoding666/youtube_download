@@ -68,7 +68,7 @@ type TabType = 'overview' | 'traffic' | 'agentgo' | 'users' | 'logs';
 
 const VALID_TABS: TabType[] = ['overview', 'traffic', 'agentgo', 'users', 'logs'];
 
-const COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316', '#eab308'];
+const COLORS = ['#ff3b3b', '#ff9500', '#00d26a', '#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6'];
 
 // 从 URL hash 获取初始 tab
 function getInitialTab(): TabType {
@@ -204,56 +204,94 @@ function AdminDashboard({ onBack }: AdminDashboardProps) {
 
   const renderOverview = () => (
     <div className="overview-content">
-      {/* 下载统计卡片 */}
+      {/* ====== 今日统计 Section ====== */}
+      <div className="data-section">
+        <div className="data-section-header">
+          <h3><Activity size={18} /> {t('admin.sections.todayStats')}</h3>
+          <span className="section-badge">{t('admin.sections.realtime')}</span>
+        </div>
+        <div className="data-grid">
+          <div className="data-item">
+            <span className="data-value">{dashboard?.total_requests_today || 0}</span>
+            <span className="data-label">{t('admin.overview.todayDownloads')}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-value">{formatBytes(dashboard?.today_traffic_bytes || 0)}</span>
+            <span className="data-label">{t('admin.overview.todayTraffic')}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-value">{dashboard?.new_users_today || 0}</span>
+            <span className="data-label">{t('admin.overview.newToday')}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-value">{dashboard?.active_users_today || 0}</span>
+            <span className="data-label">{t('admin.overview.activeToday')}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-value">{dashboard?.download_success_rate || 0}%</span>
+            <span className="data-label">{t('admin.overview.successRate')}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ====== 累计统计 Section ====== */}
+      <div className="data-section">
+        <div className="data-section-header">
+          <h3><Database size={18} /> {t('admin.sections.totalStats')}</h3>
+          <span className="section-badge total">{t('admin.traffic.totalTraffic')}</span>
+        </div>
+        <div className="data-grid">
+          <div className="data-item">
+            <span className="data-value">{dashboard?.total_downloads || 0}</span>
+            <span className="data-label">{t('admin.overview.totalDownloads')}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-value">{formatBytes(dashboard?.total_traffic_bytes || 0)}</span>
+            <span className="data-label">{t('admin.traffic.totalTraffic')}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-value">{dashboard?.total_users || 0}</span>
+            <span className="data-label">{t('admin.overview.totalUsers')}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-value">{dashboard?.unique_videos || 0}</span>
+            <span className="data-label">{t('admin.traffic.uniqueVideos')}</span>
+          </div>
+          <div className="data-item">
+            <span className="data-value">{dashboard?.agentgo_calls_total || 0}</span>
+            <span className="data-label">{t('admin.overview.agentgoCalls')}</span>
+            <span className="data-sub">{dashboard?.agentgo_success_rate_total || 0}% {t('admin.overview.successRate')}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ====== 周/月对比 ====== */}
       <div className="stats-grid">
         <div className="stat-card primary">
-          <div className="stat-icon"><Activity size={24} /></div>
-          <div className="stat-content">
-            <span className="stat-value">{dashboard?.total_requests_today || 0}</span>
-            <span className="stat-label">{t('admin.overview.todayDownloads')}</span>
-          </div>
-          <div className="stat-trend">
-            <span className="trend-value">{t('common.week')}: {dashboard?.total_requests_week || 0} | {t('common.month')}: {dashboard?.total_requests_month || 0}</span>
-          </div>
+          <h4>{t('admin.overview.weekDownloads')}</h4>
+          <span className="big-value">{dashboard?.total_requests_week || 0}</span>
+          <span className="stat-sub">{t('admin.overview.downloads')}</span>
         </div>
-
         <div className="stat-card success">
-          <div className="stat-icon"><CheckCircle size={24} /></div>
-          <div className="stat-content">
-            <span className="stat-value">{dashboard?.download_success_rate || 0}%</span>
-            <span className="stat-label">{t('admin.overview.successRate')}</span>
-          </div>
-          <div className="stat-trend">
-            <span className="trend-value">{t('admin.overview.totalDownloads')}: {dashboard?.total_downloads || 0}</span>
-          </div>
+          <h4>{t('admin.overview.monthDownloads')}</h4>
+          <span className="big-value">{dashboard?.total_requests_month || 0}</span>
+          <span className="stat-sub">{t('admin.overview.downloads')}</span>
         </div>
-
         <div className="stat-card info">
-          <div className="stat-icon"><Zap size={24} /></div>
-          <div className="stat-content">
-            <span className="stat-value">{agentgo?.total_calls || 0}</span>
-            <span className="stat-label">{t('admin.overview.agentgoCalls')}</span>
-          </div>
-          <div className="stat-trend">
-            <span className="trend-value">{agentgo?.success_rate || 0}% {t('admin.overview.successRate')}</span>
-          </div>
+          <h4>{t('admin.users.premiumUsers')}</h4>
+          <span className="big-value">{userStats?.premium_users || 0}</span>
+          <span className="stat-sub">{t('admin.overview.users')}</span>
         </div>
-
         <div className="stat-card warning">
-          <div className="stat-icon"><Users size={24} /></div>
-          <div className="stat-content">
-            <span className="stat-value">{dashboard?.total_users || 0}</span>
-            <span className="stat-label">{t('admin.overview.totalUsers')}</span>
-          </div>
-          <div className="stat-trend">
-            <span className="trend-value">{t('admin.overview.newToday')}: {dashboard?.new_users_today || 0} | {t('admin.overview.activeToday')}: {dashboard?.active_users_today || 0}</span>
-          </div>
+          <h4>{t('admin.users.adminUsers')}</h4>
+          <span className="big-value">{userStats?.admin_users || 0}</span>
+          <span className="stat-sub">{t('admin.overview.users')}</span>
         </div>
       </div>
 
       {/* 流量分类统计 */}
       <div className="traffic-breakdown">
-        <h3><Database size={20} /> {t('admin.traffic.breakdown')}</h3>
+        <h3><TrendingUp size={18} /> {t('admin.traffic.breakdown')}</h3>
         <div className="traffic-cards">
           <div className="traffic-card download">
             <span className="traffic-label">{t('admin.traffic.downloadTraffic')}</span>
@@ -280,34 +318,34 @@ function AdminDashboard({ onBack }: AdminDashboardProps) {
 
       {/* 时间线图表 */}
       <div className="chart-section">
-        <h3><Clock size={20} /> {t('admin.overview.trend24h')}</h3>
+        <h3><Clock size={18} /> {t('admin.overview.trend24h')}</h3>
         <div className="chart-container">
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={timeline?.data || []}>
               <defs>
                 <linearGradient id="colorApi" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#ff3b3b" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#ff3b3b" stopOpacity={0}/>
                 </linearGradient>
                 <linearGradient id="colorAgentgo" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#ff9500" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#ff9500" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
               <XAxis 
                 dataKey="timestamp" 
-                stroke="#94a3b8"
+                stroke="#888"
                 tickFormatter={(value) => new Date(value).getHours() + ':00'}
               />
-              <YAxis stroke="#94a3b8" />
+              <YAxis stroke="#888" />
               <Tooltip 
-                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
+                contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
                 labelFormatter={(value) => new Date(value).toLocaleString()}
               />
               <Legend />
-              <Area type="monotone" dataKey="api_requests" name={t('admin.overview.todayDownloads')} stroke="#6366f1" fillOpacity={1} fill="url(#colorApi)" />
-              <Area type="monotone" dataKey="agentgo_calls" name="AgentGo" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorAgentgo)" />
+              <Area type="monotone" dataKey="api_requests" name={t('admin.overview.todayDownloads')} stroke="#ff3b3b" fillOpacity={1} fill="url(#colorApi)" />
+              <Area type="monotone" dataKey="agentgo_calls" name="AgentGo" stroke="#ff9500" fillOpacity={1} fill="url(#colorAgentgo)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -315,10 +353,10 @@ function AdminDashboard({ onBack }: AdminDashboardProps) {
 
       {/* 地理分布 */}
       <div className="chart-section">
-        <h3><Globe size={20} /> {t('admin.overview.geoDistribution')}</h3>
+        <h3><Globe size={18} /> {t('admin.overview.geoDistribution')}</h3>
         <div className="geo-grid">
           <div className="geo-chart">
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={220}>
               <PieChart>
                 <Pie
                   data={geoStats?.by_country?.slice(0, 8) || []}
@@ -326,7 +364,7 @@ function AdminDashboard({ onBack }: AdminDashboardProps) {
                   nameKey="country_code"
                   cx="50%"
                   cy="50%"
-                  outerRadius={80}
+                  outerRadius={70}
                   label={({ name, percent }) => `${name} (${((percent || 0) * 100).toFixed(0)}%)`}
                 >
                   {geoStats?.by_country?.slice(0, 8).map((_, index) => (
@@ -381,30 +419,30 @@ function AdminDashboard({ onBack }: AdminDashboardProps) {
 
       {/* 流量趋势图 */}
       <div className="chart-section">
-        <h3><TrendingUp size={20} /> {t('admin.traffic.dailyTrend')}</h3>
+        <h3><TrendingUp size={18} /> {t('admin.traffic.dailyTrend')}</h3>
         <div className="chart-container">
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={traffic?.daily_trend || []}>
               <defs>
                 <linearGradient id="colorDownload" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#00d26a" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#00d26a" stopOpacity={0}/>
                 </linearGradient>
                 <linearGradient id="colorProxy" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#ff9500" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#ff9500" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="date" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" tickFormatter={(v) => formatBytes(v)} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+              <XAxis dataKey="date" stroke="#888" />
+              <YAxis stroke="#888" tickFormatter={(v) => formatBytes(v)} />
               <Tooltip 
                 formatter={(value) => formatBytes(Number(value))}
-                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
+                contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
               />
               <Legend />
-              <Area type="monotone" dataKey="download_bytes" name={t('admin.traffic.downloadTraffic')} stroke="#10b981" fillOpacity={1} fill="url(#colorDownload)" />
-              <Area type="monotone" dataKey="proxy_bytes" name={t('admin.traffic.proxyTraffic')} stroke="#f59e0b" fillOpacity={1} fill="url(#colorProxy)" />
+              <Area type="monotone" dataKey="download_bytes" name={t('admin.traffic.downloadTraffic')} stroke="#00d26a" fillOpacity={1} fill="url(#colorDownload)" />
+              <Area type="monotone" dataKey="proxy_bytes" name={t('admin.traffic.proxyTraffic')} stroke="#ff9500" fillOpacity={1} fill="url(#colorProxy)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -416,14 +454,14 @@ function AdminDashboard({ onBack }: AdminDashboardProps) {
         <div className="chart-container">
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={Object.entries(traffic?.by_resolution || {}).map(([name, value]) => ({ name, value }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="name" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" tickFormatter={(v) => formatBytes(v)} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+              <XAxis dataKey="name" stroke="#888" />
+              <YAxis stroke="#888" tickFormatter={(v) => formatBytes(v)} />
               <Tooltip 
                 formatter={(value) => formatBytes(Number(value))}
-                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }}
+                contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }}
               />
-              <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="value" fill="#ff3b3b" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -507,11 +545,11 @@ function AdminDashboard({ onBack }: AdminDashboardProps) {
           <div className="chart-container">
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={Object.entries(agentgo?.by_method || {}).map(([name, value]) => ({ name, value }))}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="name" stroke="#94a3b8" />
-                <YAxis stroke="#94a3b8" />
-                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-                <Bar dataKey="value" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                <XAxis dataKey="name" stroke="#888" />
+                <YAxis stroke="#888" />
+                <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }} />
+                <Bar dataKey="value" fill="#ff9500" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -560,11 +598,11 @@ function AdminDashboard({ onBack }: AdminDashboardProps) {
         <div className="chart-container">
           <ResponsiveContainer width="100%" height={250}>
             <LineChart data={userStats?.daily_new_users || []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="date" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px' }} />
-              <Line type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2} dot={{ fill: '#6366f1' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+              <XAxis dataKey="date" stroke="#888" />
+              <YAxis stroke="#888" />
+              <Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }} />
+              <Line type="monotone" dataKey="count" stroke="#ff3b3b" strokeWidth={2} dot={{ fill: '#ff3b3b' }} />
             </LineChart>
           </ResponsiveContainer>
         </div>

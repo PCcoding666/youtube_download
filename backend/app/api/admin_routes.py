@@ -44,7 +44,9 @@ class DashboardStats(BaseModel):
     
     # AgentGo 统计
     agentgo_calls_today: int
+    agentgo_calls_total: int = 0  # 累计总调用
     agentgo_success_rate: float
+    agentgo_success_rate_total: float = 0  # 累计成功率
     
     # 流量统计（分类）
     total_traffic_bytes: int  # 总下载流量
@@ -177,9 +179,15 @@ async def get_dashboard_stats(admin: dict = Depends(require_admin)):
         ).all()
         agentgo_all = session.query(AgentGoUsageLog).all()
         
+        # 今日统计
         agentgo_calls_today = len(agentgo_today)
-        agentgo_success_count = sum(1 for log in agentgo_today if log.success)
-        agentgo_success_rate = (agentgo_success_count / agentgo_calls_today * 100) if agentgo_calls_today > 0 else 0
+        agentgo_success_count_today = sum(1 for log in agentgo_today if log.success)
+        agentgo_success_rate = (agentgo_success_count_today / agentgo_calls_today * 100) if agentgo_calls_today > 0 else 0
+        
+        # 累计统计
+        agentgo_calls_total = len(agentgo_all)
+        agentgo_success_count_total = sum(1 for log in agentgo_all if log.success)
+        agentgo_success_rate_total = (agentgo_success_count_total / agentgo_calls_total * 100) if agentgo_calls_total > 0 else 0
         
         # AgentGo 平均耗时
         avg_agentgo_duration = 0
@@ -232,7 +240,9 @@ async def get_dashboard_stats(admin: dict = Depends(require_admin)):
             
             # AgentGo 统计
             agentgo_calls_today=agentgo_calls_today,
+            agentgo_calls_total=agentgo_calls_total,
             agentgo_success_rate=round(agentgo_success_rate, 1),
+            agentgo_success_rate_total=round(agentgo_success_rate_total, 1),
             
             # 流量统计
             total_traffic_bytes=real_total_traffic_bytes,  # 修复：使用真正的总流量
