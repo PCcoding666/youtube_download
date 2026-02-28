@@ -249,7 +249,7 @@ class YouTubeDownloader:
             "noplaylist": True,
             "retries": 10,
             "fragment_retries": 10,
-            "socket_timeout": 60,
+            "socket_timeout": 30,  # Reduced from 60s: fail faster, retry sooner
             "format": self._get_format_string(),
             "merge_output_format": "mp4" if self.resolution != "audio" else "mp3",
             "http_headers": {
@@ -261,12 +261,13 @@ class YouTubeDownloader:
                 "Sec-Ch-Ua-Mobile": "?0",
                 "Sec-Ch-Ua-Platform": '"Windows"',
             },
-            "no_cache_dir": True,
+            # "no_cache_dir": True,  # DISABLED: allow yt-dlp to cache sigfuncs & challenge solver
             "geo_bypass": True,
             "geo_bypass_country": "US",
-            "sleep_interval": 1,
-            "max_sleep_interval": 3,
-            "sleep_interval_requests": 1,
+            # Removed sleep_interval: no need to throttle since we use distributed proxies
+            # "sleep_interval": 1,
+            # "max_sleep_interval": 3,
+            # "sleep_interval_requests": 1,
             "quiet": False,
             "no_warnings": False,
             "progress_hooks": [self._progress_hook],

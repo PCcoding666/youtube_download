@@ -59,6 +59,13 @@ RUN mkdir -p /tmp/video_processing
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app && \
     chown -R app:app /app
+
+# Pre-download yt-dlp remote components (ejs challenge solver) to avoid slow GitHub downloads at runtime
+# Also pre-warm the cache directory structure
+RUN mkdir -p /home/app/.cache/yt-dlp && \
+    chown -R app:app /home/app/.cache && \
+    su app -c "yt-dlp --js-runtimes node --remote-components ejs:github --skip-download --no-warnings 'https://www.youtube.com/watch?v=jNQXAC9IVRw' 2>/dev/null || true"
+
 USER app
 
 # Expose port

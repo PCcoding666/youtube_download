@@ -103,7 +103,22 @@ class OSSStorage:
             # Temporarily disable proxy for OSS access
             saved_proxy = self._disable_proxy_env()
             try:
-                headers = {"Content-Type": content_type}
+                # Derive filename from object_key for Content-Disposition
+                # Use RFC 5987 encoding for non-ASCII filenames (e.g. Chinese characters)
+                filename = Path(object_key).name
+                try:
+                    filename.encode('latin-1')
+                    # ASCII-safe filename, use simple format
+                    content_disposition = f'attachment; filename="{filename}"'
+                except UnicodeEncodeError:
+                    # Non-ASCII filename, use RFC 5987 encoding
+                    from urllib.parse import quote
+                    encoded_filename = quote(filename, safe='')
+                    content_disposition = f"attachment; filename*=UTF-8''{encoded_filename}"
+                headers = {
+                    "Content-Type": content_type,
+                    "Content-Disposition": content_disposition,
+                }
                 with open(local_path, "rb") as f:
                     result = self.bucket.put_object(object_key, f, headers=headers)
                 return result
@@ -165,15 +180,30 @@ class OSSStorage:
 
     def get_public_url(self, object_key: str) -> str:
         """
-        Generate public URL for OSS object.
+        Generate a signed (pre-authenticated) URL for OSS object.
+
+        The bucket ACL is private, so we must use signed URLs
+        to allow temporary download access.
 
         Args:
             object_key: OSS object key
 
         Returns:
-            Public URL (bucket must have public read permission)
+            Signed URL with 6-hour expiry
         """
-        return f"https://{self.bucket_name}.{self.endpoint}/{object_key}"
+        # Generate a signed URL valid for 6 hours (21600 seconds)
+        expires = 6 * 3600
+        try:
+            # slash_safe=True preserves '/' in object key (not encoded to %2F)
+            signed_url = self.bucket.sign_url('GET', object_key, expires, slash_safe=True)
+            # sign_url may return http:// based on endpoint; ensure https
+            if signed_url.startswith('http://'):
+                signed_url = 'https://' + signed_url[7:]
+            return signed_url
+        except Exception as e:
+            logger.error(f"Failed to generate signed URL for {object_key}: {e}")
+            # Fallback to plain URL (will fail if bucket is private)
+            return f"https://{self.bucket_name}.{self.endpoint}/{object_key}"
 
     async def delete_file(self, object_key: str) -> bool:
         """

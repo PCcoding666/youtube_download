@@ -176,39 +176,70 @@ async def skill_download(
         if resolution == "audio":
             format_str = "bestaudio[ext=m4a]/bestaudio"
         elif resolution == "best":
-            format_str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+            format_str = (
+                "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+                "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+                "bestvideo+bestaudio/best"
+            )
         else:
-            format_str = f"bestvideo[height<={resolution}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={resolution}]+bestaudio/best[height<={resolution}]"
+            format_str = (
+                f"bestvideo[height<={resolution}][vcodec^=avc1]+bestaudio[ext=m4a]/"
+                f"bestvideo[height<={resolution}][ext=mp4]+bestaudio[ext=m4a]/"
+                f"bestvideo[height<={resolution}]+bestaudio/"
+                f"best[height<={resolution}]"
+            )
 
         # 获取 region (默认 us)
         region = getattr(settings, "agentgo_region", "us")
 
-        # AgentGo cookies
-        from app.services.agentgo_service import get_agentgo_service
-        agentgo = get_agentgo_service()
+        # # [DISABLED] AgentGo cookies - temporarily disabled, using PO Token + Proxy only
+        # from app.services.agentgo_service import get_agentgo_service
+        # agentgo = get_agentgo_service()
+        # cookie_file_path = None
+        # try:
+        #     cookie_file_path = agentgo.get_cached_cookie_file(region)
+        #     if not cookie_file_path and agentgo.is_api_configured():
+        #         auth_bundle = await asyncio.wait_for(
+        #             agentgo.get_youtube_authentication_bundle(region=region),
+        #             timeout=120,
+        #         )
+        #         if auth_bundle and auth_bundle.cookie_file_path:
+        #             cookie_file_path = auth_bundle.cookie_file_path
+        # except Exception as e:
+        #     logger.warning(f"[skill:{task_id}] Cookie 获取失败: {e}")
         cookie_file_path = None
 
+        # Get visitor_data via InnerTube API
+        visitor_data = None
         try:
-            cookie_file_path = agentgo.get_cached_cookie_file(region)
-            if not cookie_file_path and agentgo.is_api_configured():
-                auth_bundle = await asyncio.wait_for(
-                    agentgo.get_youtube_authentication_bundle(region=region),
-                    timeout=120,
-                )
-                if auth_bundle and auth_bundle.cookie_file_path:
-                    cookie_file_path = auth_bundle.cookie_file_path
+            from app.services.visitor_data_provider import get_visitor_data
+            import re as re_vd
+            vd_match = re_vd.search(r'[?&]v=([a-zA-Z0-9_-]{11})', request_data.youtube_url)
+            vd_video_id = vd_match.group(1) if vd_match else None
+            visitor_data = get_visitor_data(video_id=vd_video_id)
+            if visitor_data:
+                logger.info(f"[skill:{task_id}] ✅ visitor_data via InnerTube (length: {len(visitor_data)})")
         except Exception as e:
-            logger.warning(f"[skill:{task_id}] Cookie 获取失败: {e}")
+            logger.warning(f"[skill:{task_id}] visitor_data fetch error: {e}")
 
-        # 构建 yt-dlp 命令
+        # Pre-fetch PO Token directly from bgutil
         import os
-        pot_url = os.environ.get("YT_DLP_POT_PROVIDER_URL", "http://bgutil:4416")
+        from app.services.download_pool import get_bgutil_lb, get_proxy_distributor
+        bgutil_lb = get_bgutil_lb()
+        po_token = bgutil_lb.fetch_po_token()
+
+        # Build extractor args
+        extractor_args_list = []
+        if po_token:
+            extractor_args_list.extend(["--extractor-args", f"youtube:po_token=web+{po_token}"])
+        if visitor_data:
+            extractor_args_list.extend(["--extractor-args", f"youtube:visitor_data={visitor_data}"])
 
         cmd = [
             "yt-dlp",
             "--js-runtimes", "node",
             "--remote-components", "ejs:github",
-            "--extractor-args", f"youtubepot-bgutilhttp:base_url={pot_url}",
+            *extractor_args_list,
             "-f", format_str,
             "--merge-output-format", "mp4",
             "-o", f"{temp_dir}/%(id)s.%(ext)s",
@@ -221,34 +252,26 @@ async def skill_download(
             cmd.insert(1, "--cookies")
             cmd.insert(2, cookie_file_path)
 
-        # 代理
+        # Proxy: distributed across regions
         import re
         base_proxy_url = settings.http_proxy or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
         if base_proxy_url:
-            proxy_match = re.match(r'(https?://)([^:]+):([^@]+)@(.+)', base_proxy_url)
-            if proxy_match:
-                scheme = proxy_match.group(1)
-                username = proxy_match.group(2)
-                password = proxy_match.group(3)
-                host_port = proxy_match.group(4)
-                base_username = re.sub(r'-[a-z]{2}$', '', username)
-                datasea_region_map = {
-                    'us': 'us', 'uk': 'uk', 'de': 'de', 'fr': 'fr',
-                    'jp': 'jp', 'sg': 'sg', 'in': 'in', 'au': 'au', 'ca': 'ca'
-                }
-                datasea_region = datasea_region_map.get(region, 'us')
-                new_username = f"{base_username}-{datasea_region}"
-                proxy_url = f"{scheme}{new_username}:{password}@{host_port}"
-            else:
-                proxy_url = base_proxy_url
-            cmd.insert(1, "--proxy")
-            cmd.insert(2, proxy_url)
+            proxy_dist = get_proxy_distributor()
+            proxy_region = proxy_dist.get_next_region()
+            proxy_url = proxy_dist.build_proxy_url(base_proxy_url, proxy_region)
+            if proxy_url:
+                cmd.insert(1, "--proxy")
+                cmd.insert(2, proxy_url)
 
         # 执行下载
+        # Set NO_PROXY to prevent bgutil connections from routing through external proxy
         loop = asyncio.get_running_loop()
 
         def run_ytdlp():
-            return subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            env = os.environ.copy()
+            env["NO_PROXY"] = "bgutil-1,bgutil-2,bgutil-3,localhost,127.0.0.1"
+            env["no_proxy"] = "bgutil-1,bgutil-2,bgutil-3,localhost,127.0.0.1"
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
 
         result = await loop.run_in_executor(None, run_ytdlp)
 
@@ -287,6 +310,12 @@ async def skill_download(
                 error_message="Downloaded file not found",
                 processing_time=time.time() - start_time,
             )
+
+        # 确保 H.264 编码兼容性（VP9/AV1 → H.264，兼容 QuickTime/iOS）
+        from app.utils.ffmpeg_tools import ensure_h264_compatible
+        video_path = await loop.run_in_executor(
+            None, ensure_h264_compatible, video_path, f"skill:{task_id}"
+        )
 
         file_size = Path(video_path).stat().st_size
 

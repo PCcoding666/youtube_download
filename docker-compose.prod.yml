@@ -20,12 +20,34 @@ services:
       timeout: 5s
       retries: 5
 
-  # bgutil PO Token provider - 生成 PO Tokens 绕过 YouTube 机器人检测
-  bgutil:
+  # bgutil PO Token providers (3 instances for concurrency)
+  bgutil-1:
     image: brainicism/bgutil-ytdlp-pot-provider:latest
-    container_name: yt-bgutil
+    container_name: yt-bgutil-1
     ports:
       - "4416:4416"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4416/ping', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  bgutil-2:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: yt-bgutil-2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4416/ping', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  bgutil-3:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: yt-bgutil-3
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4416/ping', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""]
@@ -43,18 +65,25 @@ services:
     env_file:
       - .env
     environment:
-      - BGUTIL_URL=http://bgutil:4416
-      - YT_DLP_POT_PROVIDER_URL=http://bgutil:4416
+      - TZ=Asia/Shanghai
+      - BGUTIL_URLS=http://bgutil-1:4416,http://bgutil-2:4416,http://bgutil-3:4416
+      - BGUTIL_URL=http://bgutil-1:4416
+      - YT_DLP_POT_PROVIDER_URL=http://bgutil-1:4416
       - CORS_ORIGINS=http://u2foru.site,https://u2foru.site,http://localhost:5173
       - DATABASE_URL=postgresql://ytuser:ytpassword123@postgres:5432/ytdownloader
     depends_on:
       postgres:
         condition: service_healthy
-      bgutil:
+      bgutil-1:
+        condition: service_healthy
+      bgutil-2:
+        condition: service_healthy
+      bgutil-3:
         condition: service_healthy
     volumes:
       - /tmp/video_processing:/tmp/video_processing
       - ./logs:/app/logs
+      - yt-dlp-cache:/home/app/.cache/yt-dlp
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
@@ -77,6 +106,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  yt-dlp-cache:
     driver: local
 
 networks:

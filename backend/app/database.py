@@ -45,6 +45,8 @@ class User(Base):
     is_premium = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)  # 管理员标识
     credit_balance = Column(Integer, default=0)  # Credit 余额
+    referral_code = Column(String(10), unique=True, nullable=True, index=True)  # 邀请码
+    referred_by = Column(Integer, nullable=True)  # 被谁邀请的（用户ID）
 
 
 class Session(Base):
@@ -132,7 +134,7 @@ class UserApiKey(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, nullable=False, index=True)
     key_hash = Column(String(64), unique=True, nullable=False, index=True)  # SHA256 哈希
-    key_prefix = Column(String(8), nullable=False)  # 前8位明文，用于显示
+    key_prefix = Column(String(16), nullable=False)  # 前缀明文，用于显示 (sk-yt-XXXX 约12位)
     name = Column(String(100), nullable=True)  # 用户自定义名称
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -213,9 +215,38 @@ class Database:
         try:
             Base.metadata.create_all(bind=self.engine)
             logger.info(f"数据库初始化完成: {DATABASE_URL.split('@')[1]}")
+            # 为现有用户补充邀请码（如果还没有）
+            self._backfill_referral_codes()
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}")
             raise
+
+    def _backfill_referral_codes(self):
+        """为没有邀请码的现有用户自动生成邀请码"""
+        import string, random
+        session = self.SessionLocal()
+        try:
+            users_without_code = session.query(User).filter(
+                (User.referral_code == None) | (User.referral_code == "")
+            ).all()
+            if not users_without_code:
+                return
+            chars = string.ascii_uppercase + string.digits
+            for user in users_without_code:
+                for _ in range(10):
+                    code = ''.join(random.choices(chars, k=6))
+                    existing = session.query(User).filter(User.referral_code == code).first()
+                    if not existing:
+                        user.referral_code = code
+                        break
+            session.commit()
+            if users_without_code:
+                logger.info(f"为 {len(users_without_code)} 个用户补充了邀请码")
+        except Exception as e:
+            session.rollback()
+            logger.warning(f"补充邀请码失败: {e}")
+        finally:
+            session.close()
 
     def get_session(self) -> Session:
         """获取数据库会话"""
@@ -246,8 +277,8 @@ class Database:
                 # 新用户，可以使用
                 return True, 0
 
-            # 检查是否超过3次
-            if usage.usage_count >= 3:
+            # 检查是否超过1次（匿名用户仅可免费使用1次）
+            if usage.usage_count >= 1:
                 return False, usage.usage_count
 
             return True, usage.usage_count
@@ -291,30 +322,113 @@ class Database:
     # 用户管理
     # ========================================================================
 
-    def create_user(self, username: str, email: str, password: str) -> Optional[int]:
-        """创建新用户"""
+    def _generate_referral_code(self, session) -> str:
+        """生成唯一的 6 位邀请码"""
+        import string, random
+        chars = string.ascii_uppercase + string.digits
+        for _ in range(10):  # 最多尝试 10 次
+            code = ''.join(random.choices(chars, k=6))
+            existing = session.query(User).filter(User.referral_code == code).first()
+            if not existing:
+                return code
+        # fallback: 使用更长的码
+        return ''.join(random.choices(chars, k=8))
+
+    def create_user(self, username: str, email: str, password: str,
+                    referral_code: Optional[str] = None) -> Optional[int]:
+        """
+        创建新用户
+        
+        Args:
+            username: 用户名
+            email: 邮箱
+            password: 密码
+            referral_code: 邀请码（可选，填写后双方各得 2 credits）
+        """
         session = self.get_session()
         try:
             password_hash = self.hash_password(password)
+            
+            # 生成唯一邀请码
+            new_referral_code = self._generate_referral_code(session)
+
+            # 查找邀请人
+            referrer_id = None
+            if referral_code:
+                referrer = session.query(User).filter(
+                    User.referral_code == referral_code.upper().strip()
+                ).first()
+                if referrer:
+                    referrer_id = referrer.id
+
+            # 基础注册赠送 2 credits
+            initial_credits = 2
+            # 如果有邀请码，额外再送 2 credits
+            if referrer_id:
+                initial_credits += 2
 
             user = User(
                 username=username,
                 email=email,
-                password_hash=password_hash
+                password_hash=password_hash,
+                credit_balance=initial_credits,
+                referral_code=new_referral_code,
+                referred_by=referrer_id,
             )
             session.add(user)
             session.flush()
 
-            # 创建初始配额（高级会员无限制）
+            # 创建初始配额
             quota = UserQuota(
                 user_id=user.id,
-                free_downloads_remaining=999999,  # 注册用户无限制
+                free_downloads_remaining=999999,
                 total_downloads=0
             )
             session.add(quota)
 
+            # 记录注册赠送的 credit 交易
+            tx = CreditTransaction(
+                user_id=user.id,
+                type="recharge",
+                amount=2,
+                balance_after=initial_credits,
+                description="注册赠送 2 credits",
+            )
+            session.add(tx)
+
+            # 如果有邀请码，处理邀请奖励
+            if referrer_id:
+                # 新用户的邀请奖励
+                tx_new = CreditTransaction(
+                    user_id=user.id,
+                    type="recharge",
+                    amount=2,
+                    balance_after=initial_credits,
+                    description=f"邀请码奖励 (邀请人 ID: {referrer_id})",
+                )
+                session.add(tx_new)
+                
+                # 邀请人获得 2 credits
+                referrer = session.query(User).filter(User.id == referrer_id).with_for_update().first()
+                if referrer:
+                    referrer.credit_balance += 2
+                    tx_referrer = CreditTransaction(
+                        user_id=referrer_id,
+                        type="recharge",
+                        amount=2,
+                        balance_after=referrer.credit_balance,
+                        description=f"邀请奖励 (被邀请人: {username})",
+                    )
+                    session.add(tx_referrer)
+                    logger.info(f"邀请奖励: 用户 {referrer_id} 获得 2 credits (邀请了 {username})")
+
             session.commit()
-            logger.info(f"用户创建成功: {username} (ID: {user.id})")
+            logger.info(
+                f"用户创建成功: {username} (ID: {user.id}), "
+                f"邀请码: {new_referral_code}, "
+                f"初始 credits: {initial_credits}"
+                f"{f', 被邀请人: {referrer_id}' if referrer_id else ''}"
+            )
             return user.id
 
         except Exception as e:
@@ -344,6 +458,7 @@ class Database:
                     "is_premium": user.is_premium,
                     "is_admin": user.is_admin,
                     "credit_balance": user.credit_balance,
+                    "referral_code": user.referral_code or "",
                 }
             return None
 
@@ -542,6 +657,8 @@ class Database:
                     "is_admin": user.is_admin,
                     "created_at": user.created_at,
                     "credit_balance": user.credit_balance,
+                    "referral_code": user.referral_code or "",
+                    "referred_by": user.referred_by,
                 }
             return None
 

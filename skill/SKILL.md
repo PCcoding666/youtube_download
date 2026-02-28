@@ -1,6 +1,31 @@
 # YouTube Video Downloader Skill
 
-A pay-per-use YouTube video download service. Authenticate with API Key, pay with credits.
+Download any YouTube video in various resolutions with a simple command. Supports 360p, 480p, 720p, 1080p, best quality, and audio-only extraction.
+
+## Quick Install
+
+Just tell OpenClaw:
+
+> **"帮我安装这个 skill：https://clawhub.ai/XJouska/u2-downloader"**
+
+OpenClaw will ask you for an **API Key**. Follow these steps to get one:
+
+1. Go to [https://u2foru.site](https://u2foru.site) and register an account
+2. Navigate to the **API Keys** page (or visit [https://u2foru.site/?page=apikeys](https://u2foru.site/?page=apikeys))
+3. Click **Generate** to create your API Key (format: `sk-yt-xxxxx`)
+4. Copy the key and paste it to OpenClaw when prompted
+
+That's it! You're ready to use the skill.
+
+## Usage
+
+Once installed, just tell OpenClaw what you want. For example:
+
+> "帮我下载这个 YouTube 视频：https://youtube.com/watch?v=dQw4w9WgXcQ"
+
+> "Download this video in 1080p: https://youtube.com/watch?v=xxxxx"
+
+Supported resolutions: 360p, 480p, 720p (default), 1080p, best, audio-only.
 
 ## Authentication
 
@@ -11,15 +36,6 @@ Authorization: Bearer sk-yt-xxxxx
 ```
 
 Get your API Key at: https://u2foru.site/?page=apikeys
-
-## Credits
-
-- **Rate**: S$1 SGD = 5 Credits
-- **Cost**: 1 credit per successful download
-- **Failed downloads**: No charge
-- **Expiry**: Credits never expire
-- **Min recharge**: S$1 (suggested S$10), custom integer amount
-- **Recharge**: https://u2foru.site/?page=pricing
 
 ## Endpoints
 
@@ -48,29 +64,17 @@ Download a YouTube video.
   "video_duration": 212,
   "file_size": 52428800,
   "resolution": "720",
-  "credits_used": 1,
-  "credits_remaining": 24,
   "processing_time": 45.2
-}
-```
-
-**Response (insufficient credits):**
-```json
-{
-  "success": false,
-  "credits_remaining": 0,
-  "error_message": "Credit insufficient (current: 0). Please recharge at the website."
 }
 ```
 
 ### GET /api/v1/skill/balance
 
-Check credit balance.
+Check account status.
 
 **Response:**
 ```json
 {
-  "credit_balance": 25,
   "username": "user123"
 }
 ```
@@ -84,8 +88,7 @@ Health check (no authentication required).
 {
   "status": "healthy",
   "service": "YouTube Video Downloader Skill",
-  "version": "1.0.0",
-  "credit_rate": "1 download = 1 credit, S$1 = 5 credits"
+  "version": "1.0.0"
 }
 ```
 
@@ -95,9 +98,8 @@ Health check (no authentication required).
 |------|---------|
 | 200  | Success |
 | 401  | Invalid or missing API Key |
-| 402  | Insufficient credits |
 | 400  | Invalid request (bad URL, etc.) |
-| 500  | Server error (no credits charged) |
+| 500  | Server error |
 
 ## Example (curl)
 
@@ -107,10 +109,6 @@ curl -X POST https://u2foru.site/api/v1/skill/download \
   -H "Authorization: Bearer sk-yt-xxxxx" \
   -H "Content-Type: application/json" \
   -d '{"youtube_url": "https://youtube.com/watch?v=dQw4w9WgXcQ", "resolution": "720"}'
-
-# Check balance
-curl https://u2foru.site/api/v1/skill/balance \
-  -H "Authorization: Bearer sk-yt-xxxxx"
 ```
 
 ## Example (Python)
@@ -130,5 +128,4 @@ resp = requests.post(
 data = resp.json()
 if data["success"]:
     print(f"Download URL: {data['download_url']}")
-    print(f"Credits remaining: {data['credits_remaining']}")
 ```

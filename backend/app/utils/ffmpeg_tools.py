@@ -229,6 +229,110 @@ async def convert_to_mp3(
         raise FFmpegError(f"MP3 conversion failed: {e}")
 
 
+def get_video_codec_sync(video_path: str) -> Optional[str]:
+    """
+    同步方式获取视频文件的视频编码格式。
+
+    Returns:
+        编码名称 (如 "h264", "vp9", "av1") 或 None
+    """
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=codec_name",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        video_path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().lower()
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to detect video codec: {e}")
+        return None
+
+
+def ensure_h264_compatible(video_path: str, task_id: str = "") -> str:
+    """
+    确保视频文件使用 H.264 编码（兼容 QuickTime / iOS / 大多数播放器）。
+
+    如果视频是 VP9 / AV1 等非 H.264 编码，则用 FFmpeg 重新编码为 H.264。
+    如果已经是 H.264，直接返回原路径。
+
+    Args:
+        video_path: 输入视频文件路径
+        task_id: 任务 ID（用于日志）
+
+    Returns:
+        H.264 兼容的视频文件路径
+    """
+    codec = get_video_codec_sync(video_path)
+    if codec is None:
+        logger.warning(f"[{task_id}] Cannot detect video codec, skipping re-encode")
+        return video_path
+
+    # H.264 已经兼容，无需处理
+    if codec in ("h264", "avc1", "avc"):
+        logger.info(f"[{task_id}] Video codec is {codec} (H.264), no re-encode needed")
+        return video_path
+
+    # 需要重编码: VP9, AV1, etc.
+    logger.info(f"[{task_id}] Video codec is {codec}, re-encoding to H.264 for QuickTime compatibility...")
+
+    input_path = Path(video_path)
+    output_path = input_path.with_name(input_path.stem + "_h264" + input_path.suffix)
+
+    cmd = [
+        "ffmpeg",
+        "-i", str(input_path),
+        "-c:v", "libx264",
+        "-crf", "23",
+        "-preset", "fast",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        "-y",
+        str(output_path),
+    ]
+
+    try:
+        import time
+        start = time.time()
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+
+        if result.returncode == 0 and output_path.exists():
+            elapsed = time.time() - start
+            old_size = input_path.stat().st_size / (1024 * 1024)
+            new_size = output_path.stat().st_size / (1024 * 1024)
+            logger.info(
+                f"[{task_id}] ✅ Re-encoded {codec}→H.264 in {elapsed:.1f}s "
+                f"({old_size:.1f}MB → {new_size:.1f}MB)"
+            )
+            # 替换原文件
+            input_path.unlink()
+            output_path.rename(input_path)
+            return str(input_path)
+        else:
+            error_msg = result.stderr[-300:] if result.stderr else "Unknown error"
+            logger.warning(f"[{task_id}] Re-encode failed, using original file: {error_msg}")
+            if output_path.exists():
+                output_path.unlink()
+            return video_path
+
+    except subprocess.TimeoutExpired:
+        logger.warning(f"[{task_id}] Re-encode timed out (600s), using original file")
+        if output_path.exists():
+            output_path.unlink()
+        return video_path
+    except Exception as e:
+        logger.warning(f"[{task_id}] Re-encode error, using original file: {e}")
+        if output_path.exists():
+            output_path.unlink()
+        return video_path
+
+
 def check_ffmpeg_installed() -> bool:
     """Check if FFmpeg is installed and accessible."""
     try:

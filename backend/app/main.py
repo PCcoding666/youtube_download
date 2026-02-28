@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import re
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from app.config import settings
@@ -22,9 +23,13 @@ from app.utils.ffmpeg_tools import check_ffmpeg_installed, get_ffmpeg_version
 from app.database import get_database
 
 
+# Beijing timezone (UTC+8)
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
 # Configure comprehensive logging with security considerations
 class SecureFormatter(logging.Formatter):
-    """Custom formatter that sanitizes sensitive data from log messages."""
+    """Custom formatter that sanitizes sensitive data from log messages and uses Beijing time."""
 
     SENSITIVE_PATTERNS = [
         (r"[A-Za-z0-9+/=]{20,}", "[REDACTED_TOKEN]"),  # Tokens
@@ -33,6 +38,8 @@ class SecureFormatter(logging.Formatter):
         (r"secret[=:]\s*\S+", "secret=[REDACTED]"),  # Secrets
         (r"pot=[^&\s]+", "pot=[REDACTED]"),  # PO tokens in URLs
     ]
+
+    converter = lambda *args: datetime.now(BEIJING_TZ).timetuple()
 
     def format(self, record):
         # Get the original formatted message
@@ -53,14 +60,15 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 # Create handlers
 console_handler = logging.StreamHandler()
 
-# File handler with daily rotation
+# File handler with daily rotation (at Beijing midnight)
 from logging.handlers import TimedRotatingFileHandler
 file_handler = TimedRotatingFileHandler(
     filename=LOG_DIR / "app.log",
     when="midnight",
     interval=1,
     backupCount=30,  # Keep 30 days of logs
-    encoding="utf-8"
+    encoding="utf-8",
+    atTime=None,
 )
 
 logging.basicConfig(
@@ -118,6 +126,27 @@ async def lifespan(app: FastAPI):
 
     if settings.youtube_proxy:
         logger.info(f"YouTube proxy configured: {settings.youtube_proxy}")
+
+    # Pre-warm visitor_data cache (InnerTube API) so first request doesn't wait
+    try:
+        from app.services.visitor_data_provider import get_visitor_data
+        vd = get_visitor_data()
+        if vd:
+            logger.info(f"Pre-warmed visitor_data cache (length: {len(vd)})")
+        else:
+            logger.warning("Failed to pre-warm visitor_data cache")
+    except Exception as e:
+        logger.warning(f"visitor_data pre-warm error: {e}")
+
+    # Pre-initialize download pool services
+    try:
+        from app.services.download_pool import get_bgutil_lb, get_proxy_distributor, get_download_controller
+        lb = get_bgutil_lb()
+        get_proxy_distributor()
+        get_download_controller()
+        logger.info(f"Download pool initialized: {lb.instance_count} bgutil instances")
+    except Exception as e:
+        logger.warning(f"Download pool init error: {e}")
 
     logger.info("API ready to receive requests")
 

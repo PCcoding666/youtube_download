@@ -39,6 +39,22 @@ import './App.css';
 
 type AppState = 'idle' | 'extracting' | 'completed' | 'error';
 type AuthState = 'login' | 'register';
+
+// Progress stages for download (user-friendly names, no internal details)
+interface ProgressStage {
+  label: string;         // i18n key
+  percent: number;       // target percentage
+  duration: number;      // estimated seconds for this stage
+}
+
+const PROGRESS_STAGES: ProgressStage[] = [
+  { label: 'progress.connecting',  percent: 10,  duration: 2 },
+  { label: 'progress.analyzing',   percent: 25,  duration: 5 },
+  { label: 'progress.preparing',   percent: 40,  duration: 8 },
+  { label: 'progress.downloading', percent: 70,  duration: 15 },
+  { label: 'progress.processing',  percent: 85,  duration: 10 },
+  { label: 'progress.finalizing',  percent: 95,  duration: 5 },
+];
 type PageState = 'main' | 'payment' | 'auth' | 'admin' | 'pricing' | 'apikeys';
 
 const VALID_PAGES: PageState[] = ['main', 'payment', 'auth', 'admin', 'pricing', 'apikeys'];
@@ -84,6 +100,12 @@ function App() {
   // 匿名配额
   const [anonymousQuota, setAnonymousQuota] = useState<any>(null);
 
+  // 进度条状态
+  const [progress, setProgress] = useState(0);
+  const [progressStage, setProgressStage] = useState(0);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [estimatedTotal, setEstimatedTotal] = useState(45); // 预估总时间（秒）
+
   // 页面状态 - 从 URL 读取初始值
   const [pageState, setPageStateInternal] = useState<PageState>(getInitialPageState);
 
@@ -116,6 +138,60 @@ function App() {
       loadAnonymousQuota();
     }
   }, []);
+
+  // 进度条模拟：根据阶段自动推进
+  useEffect(() => {
+    if (appState !== 'extracting') return;
+
+    const totalEstimated = PROGRESS_STAGES.reduce((sum, s) => sum + s.duration, 0);
+    setEstimatedTotal(totalEstimated);
+
+    let stageIdx = 0;
+    let stageStart = Date.now();
+    let elapsed = 0;
+
+    const timer = setInterval(() => {
+      elapsed += 0.3;
+      setElapsedTime(Math.floor(elapsed));
+
+      if (stageIdx >= PROGRESS_STAGES.length) {
+        // 已到最后阶段，缓慢逼近 98%
+        setProgress((prev) => Math.min(prev + 0.1, 98));
+        return;
+      }
+
+      const stage = PROGRESS_STAGES[stageIdx];
+      const stageElapsed = (Date.now() - stageStart) / 1000;
+      const stageProgress = Math.min(stageElapsed / stage.duration, 1);
+
+      const prevPercent = stageIdx > 0 ? PROGRESS_STAGES[stageIdx - 1].percent : 0;
+      const currentPercent = prevPercent + (stage.percent - prevPercent) * stageProgress;
+
+      setProgress(Math.min(currentPercent, 98));
+      setProgressStage(stageIdx);
+
+      if (stageElapsed >= stage.duration) {
+        stageIdx++;
+        stageStart = Date.now();
+        if (stageIdx < PROGRESS_STAGES.length) {
+          setProgressStage(stageIdx);
+        }
+      }
+    }, 300);
+
+    return () => clearInterval(timer);
+  }, [appState]);
+
+  // 完成/失败时，进度跳到 100% 或重置
+  useEffect(() => {
+    if (appState === 'completed') {
+      setProgress(100);
+    } else if (appState === 'idle' || appState === 'error') {
+      setProgress(0);
+      setProgressStage(0);
+      setElapsedTime(0);
+    }
+  }, [appState]);
 
   const loadUserData = async () => {
     try {
@@ -280,27 +356,34 @@ function App() {
   };
 
   const handleDownload = (url: string, filename: string, resolution?: string) => {
-    // 检查是否是 YouTube CDN 链接（googlevideo.com）
-    // 如果是，使用后端代理下载以绕过防盗链
+    const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    let downloadUrl: string;
+
     if (url.includes('googlevideo.com')) {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const proxyUrl = `${API_BASE_URL}/api/v1/proxy-download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}&resolution=${encodeURIComponent(resolution || 'unknown')}`;
-      const link = document.createElement('a');
-      link.href = proxyUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // YouTube CDN 链接 → 使用后端代理下载以绕过防盗链
+      downloadUrl = `${API_BASE_URL}/api/v1/proxy-download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}&resolution=${encodeURIComponent(resolution || 'unknown')}`;
+    } else if (url.includes('.aliyuncs.com/')) {
+      // OSS 链接 → 通过后端获取签名URL（处理私有bucket + URL过期场景）
+      // 从 URL 中提取 object_key（域名后面的路径部分，去掉签名参数）
+      try {
+        const ossUrl = new URL(url);
+        const objectKey = decodeURIComponent(ossUrl.pathname.slice(1)); // 去掉前导 /
+        downloadUrl = `${API_BASE_URL}/api/v1/oss-download?object_key=${encodeURIComponent(objectKey)}&filename=${encodeURIComponent(filename)}`;
+      } catch {
+        // URL 解析失败，直接使用原始 URL
+        downloadUrl = url;
+      }
     } else {
-      // 非 YouTube CDN 链接（如 OSS 链接），直接下载
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // 其他链接，直接下载
+      downloadUrl = url;
     }
+
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const formatFileSize = (bytes: number | null): string => {
@@ -646,8 +729,48 @@ function App() {
             <div className="processing-icon">
               <Loader2 size={48} className="spinning" />
             </div>
-            <h2>{t('main.extracting')}</h2>
-            <p className="progress-text">{t('main.extractingDesc')}</p>
+            <h2>{t(PROGRESS_STAGES[progressStage]?.label || 'progress.connecting')}</h2>
+            
+            {/* 进度条 */}
+            <div className="progress-bar-container">
+              <div className="progress-bar-track">
+                <div 
+                  className="progress-bar-fill" 
+                  style={{ width: `${Math.round(progress)}%` }}
+                />
+              </div>
+              <div className="progress-bar-info">
+                <span className="progress-percent">{Math.round(progress)}%</span>
+                <span className="progress-time">
+                  {elapsedTime > 0 && (
+                    <>
+                      {t('progress.elapsed', { time: elapsedTime })}
+                      {progress > 10 && progress < 95 && (
+                        <> · {t('progress.remaining', { 
+                          time: Math.max(1, Math.round((estimatedTotal - elapsedTime) * (1 - progress / 100) / (progress / 100)))
+                        })}</>
+                      )}
+                    </>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* 阶段指示器 */}
+            <div className="progress-stages">
+              {PROGRESS_STAGES.map((stage, idx) => (
+                <div 
+                  key={idx} 
+                  className={`progress-stage-dot ${
+                    idx < progressStage ? 'completed' : 
+                    idx === progressStage ? 'active' : 'pending'
+                  }`}
+                >
+                  <div className="dot" />
+                  <span>{t(stage.label)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

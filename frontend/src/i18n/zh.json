@@ -390,6 +390,16 @@
     "checkBalance": "查询 Credit 余额",
     "healthCheck": "服务健康检查（无需认证）"
   },
+  "progress": {
+    "connecting": "正在连接服务器...",
+    "analyzing": "正在分析视频信息...",
+    "preparing": "正在准备下载资源...",
+    "downloading": "正在下载视频...",
+    "processing": "正在处理视频文件...",
+    "finalizing": "即将完成...",
+    "elapsed": "已用 {{time}}秒",
+    "remaining": "预计还需 {{time}}秒"
+  },
   "footer": {
     "copyright": "YouTube 下载器 © 2024 | 按量充值，满足各种下载需求"
   }

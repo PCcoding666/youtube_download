@@ -424,6 +424,109 @@
   margin-bottom: 1rem;
 }
 
+/* ============================================
+   进度条
+   ============================================ */
+
+.progress-bar-container {
+  width: 100%;
+  max-width: 400px;
+  margin: 1.5rem auto;
+}
+
+.progress-bar-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary) 0%, #f97316 50%, var(--primary) 100%);
+  background-size: 200% 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  animation: progress-shimmer 2s ease infinite;
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+@keyframes progress-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.progress-bar-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.progress-percent {
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.progress-time {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
+}
+
+/* 阶段指示器 */
+.progress-stages {
+  display: flex;
+  justify-content: center;
+  gap: 0.8rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.progress-stage-dot {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.progress-stage-dot .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.progress-stage-dot.active {
+  color: var(--primary);
+}
+
+.progress-stage-dot.active .dot {
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary-glow);
+  animation: pulse-dot 1.5s ease infinite;
+}
+
+.progress-stage-dot.completed {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.progress-stage-dot.completed .dot {
+  background: #22c55e;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.7; }
+}
+
 .progress-text {
   color: var(--text-secondary);
   font-size: 0.95rem;

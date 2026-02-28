@@ -25,6 +25,7 @@ class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=6)
+    referral_code: Optional[str] = Field(None, description="邀请码（可选，填写后双方各得2 credits）")
 
 
 class LoginRequest(BaseModel):
@@ -100,8 +101,11 @@ async def register(request: RegisterRequest):
     """
     db = get_database()
 
-    # 创建用户
-    user_id = db.create_user(request.username, request.email, request.password)
+    # 创建用户（支持邀请码）
+    user_id = db.create_user(
+        request.username, request.email, request.password,
+        referral_code=request.referral_code
+    )
 
     if not user_id:
         raise HTTPException(status_code=400, detail="用户名或邮箱已存在")
@@ -111,10 +115,17 @@ async def register(request: RegisterRequest):
 
     # 获取用户信息
     user = db.get_user_by_id(user_id)
+    
+    # 构建响应消息
+    credits = user.get("credit_balance", 0)
+    if request.referral_code:
+        msg = f"注册成功！已赠送 {credits} credits（含邀请奖励），可立即下载"
+    else:
+        msg = f"注册成功！已赠送 {credits} credits，可立即下载"
 
     return AuthResponse(
         success=True,
-        message="注册成功！请充值 Credit 开始下载",
+        message=msg,
         token=token,
         user={
             "id": user["id"],
@@ -122,7 +133,8 @@ async def register(request: RegisterRequest):
             "email": user["email"],
             "is_premium": user["is_premium"],
             "is_admin": user.get("is_admin", False),
-            "credit_balance": user.get("credit_balance", 0),
+            "credit_balance": credits,
+            "referral_code": user.get("referral_code", ""),
         },
     )
 
@@ -159,6 +171,7 @@ async def login(request: LoginRequest):
             "is_premium": user["is_premium"],
             "is_admin": user.get("is_admin", False),
             "credit_balance": user.get("credit_balance", 0),
+            "referral_code": user.get("referral_code", ""),
         },
     )
 

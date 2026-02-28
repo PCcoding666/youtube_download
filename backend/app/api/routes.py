@@ -469,13 +469,13 @@ async def check_anonymous_quota(request: Request):
     client_ip = get_client_ip(request)
     
     can_use, usage_count = db.check_anonymous_usage(client_ip)
-    remaining = max(0, 3 - usage_count)
+    remaining = max(0, 1 - usage_count)
     
     return {
         "ip": client_ip,
         "used": usage_count,
         "remaining": remaining,
-        "total": 3,
+        "total": 1,
         "can_use": can_use,
         "need_register": not can_use
     }
@@ -991,18 +991,18 @@ async def extract_direct_urls(
         
         logger.info(f"[{task_id}] User {user_id} ({current_user['username']}) - 预扣1 credit, 余额: {balance}")
     else:
-        # 匿名用户 - 基于IP限制3次
+        # 匿名用户 - 基于IP限制1次
         can_use, usage_count = db.check_anonymous_usage(client_ip)
         
         if not can_use:
             raise HTTPException(
                 status_code=402,
-                detail=f"免费额度已用完（{usage_count}/3次）。请注册并充值以继续使用。"
+                detail=f"免费试用已结束（{usage_count}/1次）。注册即送 2 credits，立即开始下载！"
             )
         
         # 增加匿名使用次数
         new_count = db.increment_anonymous_usage(client_ip)
-        logger.info(f"[{task_id}] Anonymous user {client_ip} - 使用次数: {new_count}/3")
+        logger.info(f"[{task_id}] Anonymous user {client_ip} - 使用次数: {new_count}/1")
 
     try:
         from app.services.storage import get_storage
@@ -1025,14 +1025,28 @@ async def extract_direct_urls(
         if resolution == "audio":
             format_str = "bestaudio[ext=m4a]/bestaudio"
         elif resolution == "best":
-            format_str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+            format_str = (
+                "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+                "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+                "bestvideo+bestaudio/best"
+            )
         else:
-            format_str = f"bestvideo[height<={resolution}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={resolution}]+bestaudio/best[height<={resolution}]"
+            format_str = (
+                f"bestvideo[height<={resolution}][vcodec^=avc1]+bestaudio[ext=m4a]/"
+                f"bestvideo[height<={resolution}][ext=mp4]+bestaudio[ext=m4a]/"
+                f"bestvideo[height<={resolution}]+bestaudio/"
+                f"best[height<={resolution}]"
+            )
 
-        # Import agentgo service
-        from app.services.agentgo_service import get_agentgo_service
-        agentgo = get_agentgo_service()
-        
+        # # [DISABLED] AgentGo service
+        # from app.services.agentgo_service import get_agentgo_service
+        # agentgo = get_agentgo_service()
+
+        # Concurrency control: limit simultaneous downloads
+        from app.services.download_pool import get_download_controller
+        dl_controller = get_download_controller()
+        await dl_controller.acquire(task_id)
+
         # Retry mechanism for YouTube anti-bot detection
         MAX_RETRIES = 3
         last_error = None
@@ -1041,39 +1055,62 @@ async def extract_direct_urls(
         for attempt in range(1, MAX_RETRIES + 1):
             logger.info(f"[{task_id}] Download attempt {attempt}/{MAX_RETRIES}")
             
-            # Get cookies (force refresh on retry)
-            cookie_file_path = None
-            try:
-                if attempt == 1:
-                    # First attempt: try cached cookies
-                    cookie_file_path = agentgo.get_cached_cookie_file(region)
-                
-                # If no cached cookies or retrying, get fresh ones
-                if not cookie_file_path and agentgo.is_api_configured():
-                    logger.info(f"[{task_id}] Fetching fresh cookies for region: {region} (attempt {attempt})")
-                    auth_bundle = await asyncio.wait_for(
-                        agentgo.get_youtube_authentication_bundle(region=region, force_refresh=(attempt > 1)),
-                        timeout=120
-                    )
-                    if auth_bundle and auth_bundle.cookie_file_path:
-                        cookie_file_path = auth_bundle.cookie_file_path
-                        logger.info(f"[{task_id}] Got fresh cookies: {cookie_file_path}")
-            except asyncio.TimeoutError:
-                logger.warning(f"[{task_id}] Cookie extraction timed out (attempt {attempt})")
-            except Exception as e:
-                logger.warning(f"[{task_id}] Failed to get cookies (attempt {attempt}): {e}")
-
-            # Build yt-dlp command
-            # bgutil provides PO Token via http://bgutil:4416
-            import os
-            pot_url = os.environ.get("YT_DLP_POT_PROVIDER_URL", "http://bgutil:4416")
-            logger.info(f"[{task_id}] 🔑 bgutil PO Token provider: {pot_url}")
+            # # [DISABLED] AgentGo cookie extraction - replaced by no-cookie approach (PO Token + Proxy is sufficient)
+            # cookie_file_path = None
+            # try:
+            #     if attempt == 1:
+            #         cookie_file_path = agentgo.get_cached_cookie_file(region)
+            #     if not cookie_file_path and agentgo.is_api_configured():
+            #         logger.info(f"[{task_id}] Fetching fresh cookies for region: {region} (attempt {attempt})")
+            #         auth_bundle = await asyncio.wait_for(
+            #             agentgo.get_youtube_authentication_bundle(region=region, force_refresh=(attempt > 1)),
+            #             timeout=120
+            #         )
+            #         if auth_bundle and auth_bundle.cookie_file_path:
+            #             cookie_file_path = auth_bundle.cookie_file_path
+            #             logger.info(f"[{task_id}] Got fresh cookies: {cookie_file_path}")
+            # except asyncio.TimeoutError:
+            #     logger.warning(f"[{task_id}] Cookie extraction timed out (attempt {attempt})")
+            # except Exception as e:
+            #     logger.warning(f"[{task_id}] Failed to get cookies (attempt {attempt}): {e}")
             
+            cookie_file_path = None
+
+            # Get visitor_data via InnerTube API (lightweight, no browser needed)
+            visitor_data = None
+            try:
+                from app.services.visitor_data_provider import get_visitor_data
+                import re as re_vd
+                vd_match = re_vd.search(r'[?&]v=([a-zA-Z0-9_-]{11})', request_data.youtube_url)
+                vd_video_id = vd_match.group(1) if vd_match else None
+                visitor_data = get_visitor_data(video_id=vd_video_id)
+                if visitor_data:
+                    logger.info(f"[{task_id}] ✅ visitor_data via InnerTube (length: {len(visitor_data)})")
+            except Exception as e:
+                logger.warning(f"[{task_id}] visitor_data fetch error: {e}")
+
+            # Pre-fetch PO Token directly from bgutil (bypasses yt-dlp plugin proxy issue)
+            from app.services.download_pool import get_bgutil_lb, get_proxy_distributor
+            bgutil_lb = get_bgutil_lb()
+            po_token = bgutil_lb.fetch_po_token()
+            if po_token:
+                logger.info(f"[{task_id}] 🔑 PO Token pre-fetched (length: {len(po_token)}, pool: {bgutil_lb.instance_count})")
+            else:
+                logger.warning(f"[{task_id}] ⚠️ PO Token fetch failed, yt-dlp will try without it")
+
+            # Build extractor args: pre-fetched PO Token + visitor_data
+            extractor_args_list = []
+            if po_token:
+                extractor_args_list.extend(["--extractor-args", f"youtube:po_token=web+{po_token}"])
+            if visitor_data:
+                extractor_args_list.extend(["--extractor-args", f"youtube:visitor_data={visitor_data}"])
+
+            # Build yt-dlp command (no bgutil plugin needed - PO Token pre-fetched)
             cmd = [
                 "yt-dlp",
-                "--js-runtimes", "node",  # Enable Node.js for JS challenge solving
-                "--remote-components", "ejs:github",  # Download JS challenge solver from GitHub
-                "--extractor-args", f"youtubepot-bgutilhttp:base_url={pot_url}",  # Configure bgutil plugin URL
+                "--js-runtimes", "node",
+                "--remote-components", "ejs:github",
+                *extractor_args_list,
                 "-f", format_str,
                 "--merge-output-format", "mp4",
                 "-o", f"{temp_dir}/%(id)s.%(ext)s",
@@ -1082,69 +1119,38 @@ async def extract_direct_urls(
                 request_data.youtube_url
             ]
 
-            # Add cookies if available
-            if cookie_file_path and Path(cookie_file_path).exists():
-                cmd.insert(1, "--cookies")
-                cmd.insert(2, cookie_file_path)
-                logger.info(f"[{task_id}] Using cookies file: {cookie_file_path}")
-            else:
-                logger.warning(f"[{task_id}] No cookies available, YouTube may block the request")
-
-            # Add proxy if configured (check both settings and environment variable)
-            # IMPORTANT: Proxy region must match AgentGo region for cookies to work!
+            # Proxy: distribute across ALL regions (no longer tied to AgentGo)
             import os
             import re
             base_proxy_url = settings.http_proxy or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
-            
+
             if base_proxy_url:
-                # Parse Datasea Gateway proxy URL and replace region to match AgentGo
-                # Format: http://user-region:password@host:port or http://user:password@host:port
-                # We need to change the region part to match the AgentGo region
-                
-                # Extract parts from proxy URL
-                proxy_match = re.match(r'(https?://)([^:]+):([^@]+)@(.+)', base_proxy_url)
-                if proxy_match:
-                    scheme = proxy_match.group(1)
-                    username = proxy_match.group(2)
-                    password = proxy_match.group(3)
-                    host_port = proxy_match.group(4)
-                    
-                    # Remove any existing region suffix from username (e.g., PCTrial-us -> PCTrial)
-                    base_username = re.sub(r'-[a-z]{2}$', '', username)
-                    
-                    # Add the correct region to match AgentGo
-                    # Map AgentGo regions to Datasea regions
-                    datasea_region_map = {
-                        'us': 'us', 'uk': 'uk', 'de': 'de', 'fr': 'fr', 
-                        'jp': 'jp', 'sg': 'sg', 'in': 'in', 'au': 'au', 'ca': 'ca'
-                    }
-                    datasea_region = datasea_region_map.get(region, 'us')
-                    
-                    # Build new proxy URL with matching region
-                    new_username = f"{base_username}-{datasea_region}"
-                    proxy_url = f"{scheme}{new_username}:{password}@{host_port}"
-                    
-                    logger.info(f"[{task_id}] 🌍 Proxy region adjusted to match AgentGo: {region} -> {datasea_region}")
-                else:
-                    # If we can't parse, use as-is
-                    proxy_url = base_proxy_url
-                    logger.warning(f"[{task_id}] Could not parse proxy URL, using as-is")
-                
-                cmd.insert(1, "--proxy")
-                cmd.insert(2, proxy_url)
-                logger.info(f"[{task_id}] Using proxy: {proxy_url}")
+                proxy_dist = get_proxy_distributor()
+                proxy_region = proxy_dist.get_next_region()
+                proxy_url = proxy_dist.build_proxy_url(base_proxy_url, proxy_region)
+                if proxy_url:
+                    cmd.insert(1, "--proxy")
+                    cmd.insert(2, proxy_url)
+                    logger.info(f"[{task_id}] 🌍 Proxy: {proxy_region} (distributed)")
             else:
-                logger.warning(f"[{task_id}] ⚠️ No proxy configured! YouTube may block requests from server IP")
+                logger.warning(f"[{task_id}] ⚠️ No proxy configured!")
 
             # Run yt-dlp in subprocess
+            # CRITICAL: Set NO_PROXY to prevent bgutil internal connections from going through external proxy
+            # Without this, yt-dlp's --proxy flag routes ALL HTTP traffic (including bgutil PO Token requests)
+            # through the external Datasea proxy, causing 20s timeouts on internal Docker network calls
             loop = asyncio.get_running_loop()
             
             def run_ytdlp():
+                env = os.environ.copy()
+                env["NO_PROXY"] = "bgutil-1,bgutil-2,bgutil-3,localhost,127.0.0.1"
+                env["no_proxy"] = "bgutil-1,bgutil-2,bgutil-3,localhost,127.0.0.1"
                 return subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=600  # 10 minutes timeout
+                    timeout=600,  # 10 minutes timeout
+                    env=env,
                 )
 
             result = await loop.run_in_executor(None, run_ytdlp)
@@ -1158,22 +1164,19 @@ async def extract_direct_urls(
             is_bot_error = "Sign in to confirm you're not a bot" in error_msg or "bot" in error_msg.lower()
             
             if is_bot_error and attempt < MAX_RETRIES:
-                logger.warning(f"[{task_id}] Bot detection on attempt {attempt}, will retry with fresh cookies...")
+                logger.warning(f"[{task_id}] Bot detection on attempt {attempt}, will retry...")
                 last_error = error_msg
-                # Clear cached cookies to force refresh
-                try:
-                    cached_file = agentgo.get_cached_cookie_file(region)
-                    if cached_file and Path(cached_file).exists():
-                        Path(cached_file).unlink()
-                        logger.info(f"[{task_id}] Cleared cached cookies for retry")
-                except Exception:
-                    pass
                 await asyncio.sleep(2)  # Brief delay before retry
             else:
                 logger.error(f"[{task_id}] yt-dlp failed: {error_msg}")
                 last_error = error_msg
                 if attempt == MAX_RETRIES:
+                    # Release semaphore before raising
+                    await dl_controller.release(task_id)
                     raise Exception(f"Download failed after {MAX_RETRIES} attempts: {error_msg}")
+
+        # Release download slot
+        await dl_controller.release(task_id)
 
         # Parse video info from JSON output
         video_info = {}
@@ -1197,6 +1200,13 @@ async def extract_direct_urls(
 
         file_size = Path(video_path).stat().st_size
         logger.info(f"[{task_id}] Download completed in {download_time:.2f}s: {file_size / 1024 / 1024:.2f} MB")
+
+        # Step 1.5: Ensure H.264 compatibility (re-encode VP9/AV1 if needed)
+        from app.utils.ffmpeg_tools import ensure_h264_compatible
+        video_path = await loop.run_in_executor(
+            None, ensure_h264_compatible, video_path, task_id
+        )
+        file_size = Path(video_path).stat().st_size  # Update file size after possible re-encode
 
         # Step 2: Upload to OSS
         upload_start = time.time()
@@ -1612,6 +1622,39 @@ async def proxy_download(
         headers=headers, 
         media_type=content_type
     )
+
+
+@router.get("/oss-download")
+async def oss_download(object_key: str, filename: str = "video.mp4"):
+    """
+    Generate a fresh signed URL for an OSS object and redirect to it.
+    
+    This handles:
+    - Old unsigned URLs that no longer work (bucket is private)
+    - Expired signed URLs that need refreshing
+    
+    Args:
+        object_key: OSS object key (e.g. downloads/abc123/video.mp4)
+        filename: Desired download filename
+    """
+    from fastapi.responses import RedirectResponse
+    from app.services.storage import get_storage
+
+    # Security: only allow downloads/ and skill/ prefixes
+    if not object_key.startswith(("downloads/", "skill/")):
+        raise HTTPException(status_code=400, detail="Invalid object key")
+
+    storage = get_storage()
+    
+    # Check if file exists
+    exists = await storage.check_exists(object_key)
+    if not exists:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Generate fresh signed URL
+    signed_url = storage.get_public_url(object_key)
+    
+    return RedirectResponse(url=signed_url, status_code=302)
 
 
 @router.post("/extract/direct")

@@ -390,6 +390,16 @@
     "checkBalance": "Check your credit balance",
     "healthCheck": "Service health check (no auth required)"
   },
+  "progress": {
+    "connecting": "Connecting to server...",
+    "analyzing": "Analyzing video information...",
+    "preparing": "Preparing download resources...",
+    "downloading": "Downloading video...",
+    "processing": "Processing video file...",
+    "finalizing": "Almost done...",
+    "elapsed": "{{time}}s elapsed",
+    "remaining": "~{{time}}s remaining"
+  },
   "footer": {
     "copyright": "YouTube Downloader © 2024 | Pay-as-you-go credits for all download needs"
   }
